@@ -1,0 +1,25 @@
+[
+  {
+    "identity": {
+      "address": "0x0BED169E74037b66A2E1c1A4937C285057773dbB",
+      "privateKey": "7d6ec6828f80ee0b37b51e838b8adf73c789cedcd4c530c456d82947575d36d5"
+    },
+    "submit": {
+      "address": "0xAf06D82d3B344082132DbfAe1541dF86A6Aa3D29",
+      "privateKey": "acc25a9c4d040b56b9c8356e88c66a4f4d7e25661b02093610cef41d035fa41f"
+    },
+    "submitSignatures": {
+      "address": "0xc6677703F5501894da483616378690c3cD845277",
+      "privateKey": "f65944d60d0f9921cdb871f3deb7e13b8a8788705e977cd305417057d740705e"
+    },
+    "signingPolicy": {
+      "address": "0x8FE15E1048F90BC028A60007c7D5B55D9D20dE66",
+      "privateKey": "67536ef300033c69b970adf9641973f9f5504c90a729e27fef8354834b394aa3"
+    },
+    "delegation": {
+      "address": "0xBC9A659aF696a4d7375B104db8e5189b54f9D2B3",
+      "privateKey": "812f4b0c48857cc89e28af0ff426f163ea7a3e7ce9d1b7c52458ece76babe625"
+    },
+    "sortitionPrivateKey": "0x1a175764bd5808fcab8f25f8374d89f8ecf76ca22b5f8a6698bf44997092f124"
+  }
+]

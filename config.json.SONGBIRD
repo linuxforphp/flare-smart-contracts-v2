@@ -1,0 +1,25 @@
+[
+  {
+    "identity": {
+      "address": "0xEc056b0EF36de1D63031fdBb9bceF5FEB36FB27f",
+      "privateKey": "aab4880d1af1b0dbae28e743e39cd8e204c2a855e8ffa60794ebd0b459625623"
+    },
+    "submit": {
+      "address": "0x1A2c2CF93667B0936c2e2e057FaFc8637Df56642",
+      "privateKey": "a28a0d7d1acff4284cebb0add5e40b42a3fd98c1aac635e15f279ecbea061f07"
+    },
+    "submitSignatures": {
+      "address": "0xEE75CD37B1A6815Cc6E8eA27CF735524c170c57A",
+      "privateKey": "f68a6ba0e4e6a73a8dc9e10b7651921926db4f882578a5809f6dbecff27e6450"
+    },
+    "signingPolicy": {
+      "address": "0x0cD4562Cb47830cFC2acbcA68C99D4c50e962F88",
+      "privateKey": "aa6704a21f5be79a15c9c2fcbc54e717fdafcdfd2ab04e6a5d8301f93c5a5cd4"
+    },
+    "delegation": {
+      "address": "0x7C255e428e95bEbc76e944D49D4F460C84b3A3c3",
+      "privateKey": "aab4880d1af1b0dbae28e743e39cd8e204c2a855e8ffa60794ebd0b459625623"
+    },
+    "sortitionPrivateKey": "0x0f59317dea4c1a1dde873fc48aafb30d5bf4c546f9875d5138920828913a7507"
+  }
+]

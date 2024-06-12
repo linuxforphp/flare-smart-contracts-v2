@@ -39,6 +39,16 @@ export async function registerPublicKeys(
     const pkx = "0x" + web3.utils.padLeft(key.pk.x.toString(16), 64);
     const pky = "0x" + web3.utils.padLeft(key.pk.y.toString(16), 64);
 
+    // console.log(
+    //     pkx,
+    //     pky,
+    //     web3.eth.abi.encodeParameters(
+    //         ["uint256", "uint256", "uint256"],
+    //         [signature.s.toString(), signature.r.x.toString(), signature.r.y.toString()]
+    //     ),
+    //     { from: entity.identity.address }
+    // );
+
     await waitFinalize3(hre, entity.identity.address, () =>
       entityManager.registerPublicKey(
         pkx,
