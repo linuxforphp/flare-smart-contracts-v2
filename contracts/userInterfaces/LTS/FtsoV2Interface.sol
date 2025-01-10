@@ -22,21 +22,24 @@ interface FtsoV2Interface {
     }
 
     /**
-     * Returns stored data of a feed.
-     * A fee (calculated by the FeeCalculator contract) may need to be paid.
-     * @param _index The index of the feed, corresponding to feed id in
-     * the FastUpdatesConfiguration contract.
-     * @return _value The value for the requested feed.
-     * @return _decimals The decimal places for the requested feed.
-     * @return _timestamp The timestamp of the last update.
+     * Returns the list of supported feed ids.
+     * @return _feedIds The list of supported feed ids.
      */
-    function getFeedByIndex(uint256 _index)
-        external payable
-        returns (
-            uint256 _value,
-            int8 _decimals,
-            uint64 _timestamp
-        );
+    function getSupportedFeedIds() external view returns (bytes21[] memory _feedIds);
+
+    /**
+     * Calculates the fee for fetching a feed.
+     * @param _feedId The id of the feed.
+     * @return _fee The fee for fetching the feed.
+     */
+    function calculateGetFeedFee(bytes21 _feedId) external view returns (uint256 _fee);
+
+    /**
+     * Calculates the fee for fetching feeds.
+     * @param _feedIds The list of feed ids.
+     * @return _fee The fee for fetching the feeds.
+     */
+    function calculateGetFeedsFee(bytes21[] calldata _feedIds) external view returns (uint256 _fee);
 
     /**
      * Returns stored data of a feed.
@@ -54,22 +57,6 @@ interface FtsoV2Interface {
             uint64 _timestamp
         );
 
-    /**
-     * Returns stored data of each feed.
-     * A fee (calculated by the FeeCalculator contract) may need to be paid.
-     * @param _indices Indices of the feeds, corresponding to feed ids in
-     * the FastUpdatesConfiguration contract.
-     * @return _values The list of values for the requested feeds.
-     * @return _decimals The list of decimal places for the requested feeds.
-     * @return _timestamp The timestamp of the last update.
-     */
-    function getFeedsByIndex(uint256[] calldata _indices)
-        external payable
-        returns (
-            uint256[] memory _values,
-            int8[] memory _decimals,
-            uint64 _timestamp
-        );
 
     /**
      * Returns stored data of each feed.
@@ -87,22 +74,6 @@ interface FtsoV2Interface {
             uint64 _timestamp
         );
 
-    /**
-     * Returns value in wei and timestamp of a feed.
-     * A fee (calculated by the FeeCalculator contract) may need to be paid.
-     * @param _index The index of the feed, corresponding to feed id in
-     * the FastUpdatesConfiguration contract.
-     * @return _value The value for the requested feed in wei (i.e. with 18 decimal places).
-     * @return _timestamp The timestamp of the last update.
-     */
-    function getFeedByIndexInWei(
-        uint256 _index
-    )
-        external payable
-        returns (
-            uint256 _value,
-            uint64 _timestamp
-        );
 
     /**
      * Returns value in wei and timestamp of a feed.
@@ -118,19 +89,6 @@ interface FtsoV2Interface {
             uint64 _timestamp
         );
 
-    /** Returns value in wei of each feed and a timestamp.
-     * For some feeds, a fee (calculated by the FeeCalculator contract) may need to be paid.
-     * @param _indices Indices of the feeds, corresponding to feed ids in
-     * the FastUpdatesConfiguration contract.
-     * @return _values The list of values for the requested feeds in wei (i.e. with 18 decimal places).
-     * @return _timestamp The timestamp of the last update.
-     */
-    function getFeedsByIndexInWei(uint256[] calldata _indices)
-        external payable
-        returns (
-            uint256[] memory _values,
-            uint64 _timestamp
-        );
 
     /** Returns value of each feed and a timestamp.
      * For some feeds, a fee (calculated by the FeeCalculator contract) may need to be paid.
@@ -144,20 +102,6 @@ interface FtsoV2Interface {
             uint256[] memory _values,
             uint64 _timestamp
         );
-
-    /**
-     * Returns the index of a feed.
-     * @param _feedId The feed id.
-     * @return _index The index of the feed.
-     */
-    function getFeedIndex(bytes21 _feedId) external view returns (uint256 _index);
-
-    /**
-     * Returns the feed id at a given index. Removed (unused) feed index will return bytes21(0).
-     * @param _index The index.
-     * @return _feedId The feed id.
-     */
-    function getFeedId(uint256 _index) external view returns (bytes21 _feedId);
 
     /**
      * Checks if the feed data is valid (i.e. is part of the confirmed Merkle tree).
