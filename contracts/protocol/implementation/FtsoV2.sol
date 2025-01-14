@@ -21,15 +21,31 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
         uint96 index;  // index is 1-based, 0 means non-existent
     }
 
+    /// The FastUpdater contract.
     IFastUpdater public fastUpdater;
+    /// The FastUpdatesConfiguration contract.
     IFastUpdatesConfiguration public fastUpdatesConfiguration;
+    /// The FeeCalculator contract.
     IFeeCalculator public feeCalculator;
+    /// The Relay contract.
     IRelay public relay;
 
-    bytes21[] public calculatedFeedIds;
+    bytes21[] private calculatedFeedIds;
     mapping(bytes21 feedId => CalculatedFeedData) private calculatedFeedsData;
+    mapping(bytes21 oldFeedId => bytes21 newFeedId) public feedIdChanges;
 
+    /// The FTSO protocol id.
     uint256 public constant FTSO_PROTOCOL_ID = 100;
+
+    /// Event emitted when a calculated feed is added.
+    event CalculatedFeedAdded(bytes21 indexed feedId, IICalculatedFeed calculatedFeed);
+    /// Event emitted when a calculated feed is replaced.
+    event CalculatedFeedReplaced(
+        bytes21 indexed feedId, IICalculatedFeed oldCalculatedFeed, IICalculatedFeed newCalculatedFeed);
+    /// Event emitted when a calculated feed is removed.
+    event CalculatedFeedRemoved(bytes21 indexed feedId);
+    /// Event emitted when a feed id is changed (e.g. feed renamed).
+    event FeedIdChanged(bytes21 indexed oldFeedId, bytes21 indexed newFeedId);
 
     /**
      * Constructor.
@@ -45,14 +61,16 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
         Governed(_governanceSettings, _initialGovernance) AddressUpdatable(_addressUpdater)
     { }
 
+    /////////////////////////////// FEED_ID FUNCTIONS ///////////////////////////////
+
     /**
      * @inheritdoc FtsoV2Interface
      */
     function getSupportedFeedIds() external view returns (bytes21[] memory _feedIds) {
         bytes21[] memory fastUpdateFeedIds = fastUpdatesConfiguration.getFeedIds();
         uint256 unusedIndicesLength = fastUpdatesConfiguration.getUnusedIndices().length;
-        // unusedIndicesLength is less than or equal to fastUpdateFeedIds.length
-        _feedIds = new bytes21[](calculatedFeedIds.length + fastUpdateFeedIds.length - unusedIndicesLength);
+        // unusedIndicesLength <= fastUpdateFeedIds.length
+        _feedIds = new bytes21[](fastUpdateFeedIds.length - unusedIndicesLength + calculatedFeedIds.length);
         uint256 index = 0;
         // add fast update feed ids if not removed
         for (uint256 i = 0; i < fastUpdateFeedIds.length; i++) {
@@ -69,21 +87,10 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
     }
 
     /**
-     * Returns the feed id at a given index. Removed (unused) feed index will return bytes21(0).
-     * @param _index The index.
-     * @return _feedId The feed id.
+     * @inheritdoc FtsoV2Interface
      */
-    function getFeedId(uint256 _index) external view returns (bytes21) {
-        return fastUpdatesConfiguration.getFeedId(_index);
-    }
-
-    /**
-     * Returns the index of a feed.
-     * @param _feedId The feed id.
-     * @return _index The index of the feed.
-     */
-    function getFeedIndex(bytes21 _feedId) external view returns (uint256) {
-        return fastUpdatesConfiguration.getFeedIndex(_feedId);
+    function getFtsoProtocolId() external view returns (uint256) {
+        return FTSO_PROTOCOL_ID;
     }
 
     /**
@@ -94,6 +101,124 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
         bytes32 merkleRoot = relay.merkleRoots(FTSO_PROTOCOL_ID, _feedData.body.votingRoundId);
         require(_feedData.proof.verifyCalldata(merkleRoot, feedHash), "merkle proof invalid");
         return true;
+    }
+
+    /**
+     * @inheritdoc FtsoV2Interface
+     */
+    function getFeedById(bytes21 _feedId) external payable returns (uint256, int8, uint64) {
+        return _getFeedById(_feedId);
+    }
+
+    /**
+     * @inheritdoc FtsoV2Interface
+     */
+    function getFeedsById(bytes21[] memory _feedIds)
+        external payable
+        returns(
+            uint256[] memory,
+            int8[] memory,
+            uint64
+        )
+    {
+        return _getFeedsById(_feedIds);
+    }
+
+    /**
+     * @inheritdoc FtsoV2Interface
+     */
+    function getFeedByIdInWei(bytes21 _feedId)
+        external payable
+        returns (
+            uint256 _value,
+            uint64 _timestamp
+        )
+    {
+        int8 decimals;
+        (_value, decimals, _timestamp) = _getFeedById(_feedId);
+        _value = _convertToWei(_value, decimals);
+    }
+
+    /**
+     * @inheritdoc FtsoV2Interface
+     */
+    function getFeedsByIdInWei(bytes21[] memory _feedIds)
+        external payable
+        returns (
+            uint256[] memory _values,
+            uint64 _timestamp
+        )
+    {
+        int8[] memory decimals;
+        (_values, decimals, _timestamp) = _getFeedsById(_feedIds);
+        _convertToWei(_values, decimals);
+    }
+
+    /**
+     * @inheritdoc FtsoV2Interface
+     */
+    function calculateFeeById(bytes21 _feedId) external view returns (uint256 _fee) {
+        // first check for feed id changes
+        _feedId = _getCurrentFeedId(_feedId);
+        if (_isCalculatedFeedId(_feedId)) {
+            IICalculatedFeed calculatedFeed = calculatedFeedsData[_feedId].calculatedFeed;
+            require(address(calculatedFeed) != address(0), "calculated feed id not supported");
+            return calculatedFeed.calculateFee();
+        } else {
+            bytes21[] memory feedIds = new bytes21[](1);
+            feedIds[0] = _feedId;
+            return feeCalculator.calculateFeeByIds(feedIds);
+        }
+    }
+
+    /**
+     * @inheritdoc FtsoV2Interface
+     */
+    function calculateFeeByIds(bytes21[] memory _feedIds) external view returns (uint256 _fee) {
+        // first check for feed id changes
+        for (uint256 i = 0; i < _feedIds.length; i++) {
+            _feedIds[i] = _getCurrentFeedId(_feedIds[i]);
+        }
+        uint256 count = _getNumberOfFastUpdateFeedIds(_feedIds);
+        if (count == _feedIds.length) {
+            return feeCalculator.calculateFeeByIds(_feedIds);
+        } else {
+            bytes21[] memory fastUpdateFeedIds = new bytes21[](count);
+            count = 0;
+            for (uint256 i = 0; i < _feedIds.length; i++) {
+                if (_isCalculatedFeedId(_feedIds[i])) {
+                    IICalculatedFeed calculatedFeed = calculatedFeedsData[_feedIds[i]].calculatedFeed;
+                    require(address(calculatedFeed) != address(0), "calculated feed id not supported");
+                    _fee += calculatedFeed.calculateFee();
+                } else {
+                    fastUpdateFeedIds[count] = _feedIds[i];
+                    count++;
+                }
+            }
+            _fee += feeCalculator.calculateFeeByIds(fastUpdateFeedIds);
+        }
+    }
+
+    /////////////////////////////// FEED_INDEX FUNCTIONS ///////////////////////////////
+
+    /**
+     * Returns the feed id at a given index. Removed (unused) feed index will return bytes21(0).
+     * NOTE: Only works for feed index in the FastUpdatesConfiguration contract.
+     * @param _index The index.
+     * @return _feedId The feed id.
+     */
+    function getFeedId(uint256 _index) external view returns (bytes21) {
+        return fastUpdatesConfiguration.getFeedId(_index);
+    }
+
+    /**
+     * Returns the index of a feed id.
+     * NOTE: Only works for feed id in the FastUpdatesConfiguration contract.
+     * @param _feedId The feed id.
+     * @return _index The index of the feed.
+     */
+    function getFeedIndex(bytes21 _feedId) external view returns (uint256) {
+        return fastUpdatesConfiguration.getFeedIndex(_feedId);
     }
 
     /**
@@ -110,13 +235,6 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
     }
 
     /**
-     * @inheritdoc FtsoV2Interface
-     */
-    function getFeedById(bytes21 _feedId) external payable returns (uint256, int8, uint64) {
-        return _getFeedById(_feedId);
-    }
-
-    /**
      * Returns stored data of each feed.
      * A fee (calculated by the FeeCalculator contract) may need to be paid.
      * @param _indices Indices of the feeds, corresponding to feed ids in
@@ -125,7 +243,7 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
      * @return _decimals The list of decimal places for the requested feeds.
      * @return _timestamp The timestamp of the last update.
      */
-    function getFeedsByIndex(uint256[] calldata _indices)
+    function getFeedsByIndex(uint256[] memory _indices)
         external payable
         returns (
             uint256[] memory,
@@ -134,20 +252,6 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
         )
     {
         return fastUpdater.fetchCurrentFeeds{value: msg.value} (_indices);
-    }
-
-    /**
-     * @inheritdoc FtsoV2Interface
-     */
-    function getFeedsById(bytes21[] calldata _feedIds)
-        external payable
-        returns(
-            uint256[] memory,
-            int8[] memory,
-            uint64
-        )
-    {
-        return _getFeedsById(_feedIds);
     }
 
     /**
@@ -169,21 +273,6 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
         _value = _convertToWei(_value, decimals);
     }
 
-    /**
-     * @inheritdoc FtsoV2Interface
-     */
-    function getFeedByIdInWei(bytes21 _feedId)
-        external payable
-        returns (
-            uint256 _value,
-            uint64 _timestamp
-        )
-    {
-        int8 decimals;
-        (_value, decimals, _timestamp) = _getFeedById(_feedId);
-        _value = _convertToWei(_value, decimals);
-    }
-
     /** Returns value in wei of each feed and a timestamp.
      * For some feeds, a fee (calculated by the FeeCalculator contract) may need to be paid.
      * @param _indices Indices of the feeds, corresponding to feed ids in
@@ -191,7 +280,7 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
      * @return _values The list of values for the requested feeds in wei (i.e. with 18 decimal places).
      * @return _timestamp The timestamp of the last update.
      */
-    function getFeedsByIndexInWei(uint256[] calldata _indices)
+    function getFeedsByIndexInWei(uint256[] memory _indices)
         external payable
         returns (
             uint256[] memory _values,
@@ -200,68 +289,29 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
     {
         int8[] memory decimals;
         (_values, decimals, _timestamp) = fastUpdater.fetchCurrentFeeds{value: msg.value} (_indices);
-        _values = _convertToWei(_values, decimals);
+        _convertToWei(_values, decimals);
     }
 
     /**
-     * @inheritdoc FtsoV2Interface
+     * Calculates the fee for fetching a feed.
+     * @param _index The index of the feed, corresponding to feed id in
+     * the FastUpdatesConfiguration contract.
+     * @return _fee The fee for fetching the feed.
      */
-    function getFeedsByIdInWei(bytes21[] calldata _feedIds)
-        external payable
-        returns (
-            uint256[] memory _values,
-            uint64 _timestamp
-        )
-    {
-        int8[] memory decimals;
-        (_values, decimals, _timestamp) = _getFeedsById(_feedIds);
-        _values = _convertToWei(_values, decimals);
+    function calculateFeeByIndex(uint256 _index) external view returns (uint256 _fee) {
+        uint256[] memory indices = new uint256[](1);
+        indices[0] = _index;
+        return feeCalculator.calculateFeeByIndices(indices);
     }
 
     /**
-     * @inheritdoc FtsoV2Interface
+     * Calculates the fee for fetching feeds.
+     * @param _indices Indices of the feeds, corresponding to feed ids in
+     * the FastUpdatesConfiguration contract.
+     * @return _fee The fee for fetching the feeds.
      */
-    function calculateGetFeedFee(bytes21 _feedId) external view returns (uint256 _fee) {
-        if (_isCalculatedFeedId(_feedId)) {
-            IICalculatedFeed calculatedFeed = calculatedFeedsData[_feedId].calculatedFeed;
-            require(address(calculatedFeed) != address(0), "calculated feed id not supported");
-            return calculatedFeed.calculateFee();
-        } else {
-            bytes21[] memory feedIds = new bytes21[](1);
-            feedIds[0] = _feedId;
-            return feeCalculator.calculateFeeByIds(feedIds);
-        }
-    }
-
-    /**
-     * @inheritdoc FtsoV2Interface
-     */
-    function calculateGetFeedsFee(bytes21[] calldata _feedIds) external view returns (uint256 _fee) {
-        uint256 count = _getNumberOfFastUpdateFeedIds(_feedIds);
-        if (count == _feedIds.length) {
-            return feeCalculator.calculateFeeByIds(_feedIds);
-        } else {
-            bytes21[] memory fastUpdateFeedIds = new bytes21[](count);
-            count = 0;
-            for (uint256 i = 0; i < _feedIds.length; i++) {
-                if (_isCalculatedFeedId(_feedIds[i])) {
-                    IICalculatedFeed calculatedFeed = calculatedFeedsData[_feedIds[i]].calculatedFeed;
-                    require(address(calculatedFeed) != address(0), "calculated feed id not supported");
-                    _fee += calculatedFeed.calculateFee();
-                } else {
-                    fastUpdateFeedIds[count] = _feedIds[i];
-                    count++;
-                }
-            }
-            _fee += feeCalculator.calculateFeeByIds(fastUpdateFeedIds);
-        }
-    }
-
-    /**
-     * Returns the contract used with calculated feed or address zero if feed id is not supported.
-     */
-    function getCalculatedFeedContract(bytes21 _feedId) external view returns (IICalculatedFeed _calculatedFeed) {
-        return calculatedFeedsData[_feedId].calculatedFeed;
+    function calculateFeeByIndices(uint256[] memory _indices) external view returns (uint256 _fee) {
+        return feeCalculator.calculateFeeByIndices(_indices);
     }
 
     /////////////////////////////// GOVERNANCE FUNCTIONS ///////////////////////////////
@@ -281,6 +331,7 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
             calculatedFeedIds.push(feedId);
             calculatedFeedData.calculatedFeed = _calculatedFeeds[i];
             calculatedFeedData.index = uint96(calculatedFeedIds.length);
+            emit CalculatedFeedAdded(feedId, _calculatedFeeds[i]);
         }
     }
 
@@ -294,6 +345,7 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
             bytes21 feedId = _calculatedFeeds[i].feedId();
             CalculatedFeedData storage calculatedFeedData = calculatedFeedsData[feedId];
             require(calculatedFeedData.index != 0, "feed does not exist");
+            emit CalculatedFeedReplaced(feedId, calculatedFeedData.calculatedFeed, _calculatedFeeds[i]);
             calculatedFeedData.calculatedFeed = _calculatedFeeds[i];
         }
     }
@@ -314,7 +366,29 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
             }
             calculatedFeedIds.pop();
             delete calculatedFeedsData[_feedIds[i]];
+            emit CalculatedFeedRemoved(_feedIds[i]);
         }
+    }
+
+    /**
+     * Change feed ids. This is used when a feed id is updated (e.g. feed renamed).
+     * @param _oldFeedIds The old feed ids.
+     * @param _newFeedIds The new feed ids.
+     * @dev Only governance can call this method.
+     */
+    function changeFeedIds(bytes21[] calldata _oldFeedIds, bytes21[] calldata _newFeedIds) external onlyGovernance {
+        require(_oldFeedIds.length == _newFeedIds.length, "array lengths do not match");
+        for (uint256 i = 0; i < _oldFeedIds.length; i++) {
+            feedIdChanges[_oldFeedIds[i]] = _newFeedIds[i];
+            emit FeedIdChanged(_oldFeedIds[i], _newFeedIds[i]);
+        }
+    }
+
+    /**
+     * Returns the contract used with calculated feed or address zero if feed id is not supported.
+     */
+    function getCalculatedFeedContract(bytes21 _feedId) external view returns (IICalculatedFeed _calculatedFeed) {
+        return calculatedFeedsData[_feedId].calculatedFeed;
     }
 
     /////////////////////////////// INTERNAL FUNCTIONS ///////////////////////////////
@@ -326,7 +400,7 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
     }
 
     // Returns the number of fast update feed ids in the list.
-    function _getNumberOfFastUpdateFeedIds(bytes21[] calldata _feedIds)
+    function _getNumberOfFastUpdateFeedIds(bytes21[] memory _feedIds)
         internal pure
         returns (uint256 _numberOfFastUpdateFeedIds)
     {
@@ -338,7 +412,7 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
     }
 
     // Returns the indices of the fast update feeds - all that are not calculated feeds
-    function _getFastUpdateIndices(bytes21[] calldata _feedIds)
+    function _getFastUpdateIndices(bytes21[] memory _feedIds)
         internal view
         returns (uint256[] memory _fastUpdateIndices)
     {
@@ -354,27 +428,10 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
         }
     }
 
-    // Returns the feed ids of the fast update feeds - all that are not calculated feeds
-    function _getFastUpdateFeedIds(bytes21[] calldata _feedIds)
-        internal pure
-        returns (bytes21[] memory _fastUpdateFeedIds)
-    {
-        uint256 length = _feedIds.length;
-        uint256 count = _getNumberOfFastUpdateFeedIds(_feedIds);
-        if (count == length) {
-            return _feedIds;
-        }
-        _fastUpdateFeedIds = new bytes21[](count);
-        while (count > 0) {
-            length--;
-            if (!_isCalculatedFeedId(_feedIds[length])) {
-                count--;
-                _fastUpdateFeedIds[count] = _feedIds[length];
-            }
-        }
-    }
-
-    function _getFeedsById(bytes21[] calldata _feedIds)
+    // Returns the feed data for all feed ids.
+    // NOTE: _timestamp is the same for all feeds (this is not checked), but even if calculated feeds are included,
+    // we as well get the referenced feeds values from the FastUpdater contract which will return the same timestamp.
+    function _getFeedsById(bytes21[] memory _feedIds)
         internal
         returns(
             uint256[] memory _values,
@@ -382,6 +439,10 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
             uint64 _timestamp
         )
     {
+        // first check for feed id changes
+        for (uint256 i = 0; i < _feedIds.length; i++) {
+            _feedIds[i] = _getCurrentFeedId(_feedIds[i]);
+        }
         uint256[] memory indices = _getFastUpdateIndices(_feedIds);
         if (_feedIds.length == indices.length) { // all feeds are fast update feeds
             return fastUpdater.fetchCurrentFeeds{value: msg.value} (indices);
@@ -397,21 +458,24 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
                     (_values[i], _decimals[i], _timestamp) = calculatedFeed.getCurrentFeed{value: fee} ();
                 }
             }
-            uint256[] memory values;
-            int8[] memory decimals;
-            // set fast update feeds data - use all remaining balance for fees
-            (values, decimals, _timestamp) = fastUpdater.fetchCurrentFeeds{value: address(this).balance} (indices);
-            uint256 index = 0;
-            for (uint256 i = 0; i < _feedIds.length; i++) {
-                if (!_isCalculatedFeedId(_feedIds[i])) {
-                    _values[i] = values[index];
-                    _decimals[i] = decimals[index];
-                    index++;
+            if (indices.length > 0) {
+                uint256[] memory values;
+                int8[] memory decimals;
+                // set fast update feeds data - use all remaining balance for fees
+                (values, decimals, _timestamp) = fastUpdater.fetchCurrentFeeds{value: address(this).balance} (indices);
+                uint256 index = 0;
+                for (uint256 i = 0; i < _feedIds.length; i++) {
+                    if (!_isCalculatedFeedId(_feedIds[i])) {
+                        _values[i] = values[index];
+                        _decimals[i] = decimals[index];
+                        index++;
+                    }
                 }
             }
         }
     }
 
+    // Returns the feed data for a feed id.
     function _getFeedById(bytes21 _feedId)
         internal
         returns(
@@ -420,6 +484,8 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
             uint64
         )
     {
+        // first check for feed id changes
+        _feedId = _getCurrentFeedId(_feedId);
         if (_isCalculatedFeedId(_feedId)) {
             IICalculatedFeed calculatedFeed = calculatedFeedsData[_feedId].calculatedFeed;
             require(address(calculatedFeed) != address(0), "calculated feed id not supported");
@@ -429,6 +495,7 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
         }
     }
 
+    // Returns the feed data for a feed index.
     function _getFeedByIndex(uint256 _index)
         internal
         returns (
@@ -444,20 +511,30 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
         return (values[0], decimals[0], timestamp);
     }
 
+    // Returns the current feed id if it has been changed.
+    function _getCurrentFeedId(bytes21 _feedId)
+        internal view
+        returns (bytes21)
+    {
+        bytes21 updatedFeedId = feedIdChanges[_feedId];
+        if (updatedFeedId != bytes21(0)) {
+            return updatedFeedId;
+        } else {
+            return _feedId;
+        }
+    }
 
+    // Converts values to wei - updates _values in place.
     function _convertToWei(uint256[] memory _values, int8[] memory _decimals)
         internal pure
-        returns (
-            uint256[] memory
-        )
     {
         assert(_values.length == _decimals.length);
         for (uint256 i = 0; i < _values.length; i++) {
             _values[i] = _convertToWei(_values[i], _decimals[i]);
         }
-        return _values;
     }
 
+    // Converts a value to wei.
     function _convertToWei(uint256 _value, int8 _decimals)
         internal pure
         returns (uint256)

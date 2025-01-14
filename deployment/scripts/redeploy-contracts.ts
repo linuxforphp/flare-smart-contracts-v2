@@ -325,6 +325,8 @@ export async function redeployContracts(
   }
 
   const ftsoV2 = await FtsoV2.new(
+    governanceSettings,
+    deployerAccount.address,
     deployerAccount.address // tmp address updater
   );
   spewNewContractInfo(contracts, null, FtsoV2.contractName, `FtsoV2.sol`, ftsoV2.address, quiet);
