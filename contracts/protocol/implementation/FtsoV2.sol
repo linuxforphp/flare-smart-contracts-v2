@@ -6,13 +6,14 @@ import "../../userInterfaces/IFastUpdater.sol";
 import "../../userInterfaces/IFastUpdatesConfiguration.sol";
 import "../../userInterfaces/IFeeCalculator.sol";
 import "../../userInterfaces/IRelay.sol";
-import "../../governance/implementation/Governed.sol";
+import "../../governance/implementation/GovernedProxyImplementation.sol";
 import "../../utils/implementation/AddressUpdatable.sol";
 import "../../utils/lib/AddressSet.sol";
 import "../../ftso/interface/IICalculatedFeed.sol";
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
+import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 
-contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
+contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation, AddressUpdatable {
     using MerkleProof for bytes32[];
     using AddressSet for AddressSet.State;
 
@@ -20,6 +21,9 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
         IICalculatedFeed calculatedFeed;
         uint96 index;  // index is 1-based, 0 means non-existent
     }
+
+    /// The FTSO protocol id.
+    uint256 public constant FTSO_PROTOCOL_ID = 100;
 
     /// The FastUpdater contract.
     IFastUpdater public fastUpdater;
@@ -34,8 +38,6 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
     mapping(bytes21 feedId => CalculatedFeedData) private calculatedFeedsData;
     mapping(bytes21 oldFeedId => bytes21 newFeedId) public feedIdChanges;
 
-    /// The FTSO protocol id.
-    uint256 public constant FTSO_PROTOCOL_ID = 100;
 
     /// Event emitted when a calculated feed is added.
     event CalculatedFeedAdded(bytes21 indexed feedId, IICalculatedFeed calculatedFeed);
@@ -48,18 +50,43 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
     event FeedIdChanged(bytes21 indexed oldFeedId, bytes21 indexed newFeedId);
 
     /**
-     * Constructor.
-     * @param _governanceSettings The address of the GovernanceSettings contract.
-     * @param _initialGovernance The initial governance address.
-     * @param _addressUpdater The address of the AddressUpdater contract.
+     * Constructor that initializes with invalid parameters to prevent direct deployment/updates.
      */
-    constructor(
+    constructor()
+        GovernedProxyImplementation() AddressUpdatable(address(0))
+    { }
+
+    /**
+     * Proxyable initialization method. Can be called only once, from the proxy constructor
+     * (single call is assured by GovernedBase.initialise).
+     */
+    function initialize(
         IGovernanceSettings _governanceSettings,
         address _initialGovernance,
         address _addressUpdater
     )
-        Governed(_governanceSettings, _initialGovernance) AddressUpdatable(_addressUpdater)
-    { }
+        external
+    {
+        GovernedBase.initialise(_governanceSettings, _initialGovernance);
+        AddressUpdatable.setAddressUpdaterValue(_addressUpdater);
+    }
+
+    /**
+     * @inheritdoc FtsoV2Interface
+     */
+    function getFtsoProtocolId() external pure returns (uint256) {
+        return FTSO_PROTOCOL_ID;
+    }
+
+    /**
+     * @inheritdoc FtsoV2Interface
+     */
+    function verifyFeedData(FeedDataWithProof calldata _feedData) external view returns (bool) {
+        bytes32 feedHash = keccak256(abi.encode(_feedData.body));
+        bytes32 merkleRoot = relay.merkleRoots(FTSO_PROTOCOL_ID, _feedData.body.votingRoundId);
+        require(_feedData.proof.verifyCalldata(merkleRoot, feedHash), "merkle proof invalid");
+        return true;
+    }
 
     /////////////////////////////// FEED_ID FUNCTIONS ///////////////////////////////
 
@@ -84,23 +111,6 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
             _feedIds[index] = calculatedFeedIds[i];
             index++;
         }
-    }
-
-    /**
-     * @inheritdoc FtsoV2Interface
-     */
-    function getFtsoProtocolId() external view returns (uint256) {
-        return FTSO_PROTOCOL_ID;
-    }
-
-    /**
-     * @inheritdoc FtsoV2Interface
-     */
-    function verifyFeedData(FeedDataWithProof calldata _feedData) external view returns (bool) {
-        bytes32 feedHash = keccak256(abi.encode(_feedData.body));
-        bytes32 merkleRoot = relay.merkleRoots(FTSO_PROTOCOL_ID, _feedData.body.votingRoundId);
-        require(_feedData.proof.verifyCalldata(merkleRoot, feedHash), "merkle proof invalid");
-        return true;
     }
 
     /**
@@ -390,6 +400,30 @@ contract FtsoV2 is FtsoV2Interface, Governed, AddressUpdatable {
     function getCalculatedFeedContract(bytes21 _feedId) external view returns (IICalculatedFeed _calculatedFeed) {
         return calculatedFeedsData[_feedId].calculatedFeed;
     }
+
+    /////////////////////////////// UUPS UPGRADABLE ///////////////////////////////
+
+    /**
+     * @inheritdoc UUPSUpgradeable
+     * @dev Only governance can call this method.
+     */
+    function upgradeToAndCall(address newImplementation, bytes memory data)
+        public payable override
+        onlyGovernance
+        onlyProxy
+    {
+        super.upgradeToAndCall(newImplementation, data);
+    }
+
+    function implementation() external view returns (address) {
+        return ERC1967Utils.getImplementation();
+    }
+
+    /**
+     * Unused. just to present to satisfy UUPSUpgradeable requirement.
+     * The real check is in onlyGovernance modifier on upgradeTo and upgradeToAndCall.
+     */
+    function _authorizeUpgrade(address newImplementation) internal override {}
 
     /////////////////////////////// INTERNAL FUNCTIONS ///////////////////////////////
 

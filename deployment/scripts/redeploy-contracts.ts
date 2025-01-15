@@ -30,6 +30,7 @@ import { FeeCalculatorContract } from '../../typechain-truffle/contracts/fastUpd
 import { FtsoManagerProxyContract } from '../../typechain-truffle/contracts/fscV1/implementation/FtsoManagerProxy';
 import { FtsoProxyContract } from '../../typechain-truffle/contracts/fscV1/implementation/FtsoProxy';
 import { FtsoV2Contract } from '../../typechain-truffle/contracts/protocol/implementation/FtsoV2';
+import { FtsoV2ProxyContract } from '../../typechain-truffle/contracts/protocol/implementation/FtsoV2Proxy';
 import { PriceSubmitterProxyContract } from '../../typechain-truffle/contracts/fscV1/implementation/PriceSubmitterProxy';
 import { VoterWhitelisterProxyContract } from '../../typechain-truffle/contracts/fscV1/implementation/VoterWhitelisterProxy';
 import { FtsoRewardManagerProxyContract, FtsoRewardManagerProxyInstance } from '../../typechain-truffle/contracts/fscV1/implementation/FtsoRewardManagerProxy';
@@ -69,7 +70,8 @@ export async function redeployContracts(
   const RNatAccount: RNatAccountContract = artifacts.require("RNatAccount");
   const FtsoManagerProxy: FtsoManagerProxyContract = artifacts.require("FtsoManagerProxy");
   const FtsoProxy: FtsoProxyContract = artifacts.require("FtsoProxy");
-  const FtsoV2: FtsoV2Contract = artifacts.require("FtsoV2");
+  const FtsoV2Implementation: FtsoV2Contract = artifacts.require("FtsoV2");
+  const FtsoV2Proxy: FtsoV2ProxyContract = artifacts.require("FtsoV2Proxy");
   const PriceSubmitterProxy: PriceSubmitterProxyContract = artifacts.require("PriceSubmitterProxy");
   const VoterWhitelisterProxy: VoterWhitelisterProxyContract = artifacts.require("VoterWhitelisterProxy");
   const RewardManager: RewardManagerContract = artifacts.require("RewardManager");
@@ -324,12 +326,19 @@ export async function redeployContracts(
     spewNewContractInfo(contracts, null, `FTSO ${ftso.symbol}`, `FtsoProxy.sol`, ftsoProxy.address, quiet);
   }
 
-  const ftsoV2 = await FtsoV2.new(
+  // ftso v2 implementation
+  const ftsoV2Implementation = await FtsoV2Implementation.new();
+  spewNewContractInfo(contracts, null, "FtsoV2Implementation", `FtsoV2.sol`, ftsoV2Implementation.address, quiet);
+  // ftso v2 proxy
+  const ftsoV2Proxy = await FtsoV2Proxy.new(
     governanceSettings,
     deployerAccount.address,
-    deployerAccount.address // tmp address updater
+    deployerAccount.address, // tmp address updater
+    ftsoV2Implementation.address
   );
-  spewNewContractInfo(contracts, null, FtsoV2.contractName, `FtsoV2.sol`, ftsoV2.address, quiet);
+  // ftso v2
+  const ftsoV2 = await FtsoV2Implementation.at(ftsoV2Proxy.address);
+  spewNewContractInfo(contracts, null, "FtsoV2", `FtsoV2Proxy.sol`, ftsoV2Proxy.address, quiet);
 
   const priceSubmitterProxy = await PriceSubmitterProxy.new(
     deployerAccount.address // tmp address updater
