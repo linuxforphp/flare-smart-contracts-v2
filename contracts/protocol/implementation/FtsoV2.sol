@@ -175,6 +175,7 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
             require(address(calculatedFeed) != address(0), "calculated feed id not supported");
             return calculatedFeed.calculateFee();
         } else {
+            fastUpdatesConfiguration.getFeedIndex(_feedId); // check if feed id is supported
             bytes21[] memory feedIds = new bytes21[](1);
             feedIds[0] = _feedId;
             return feeCalculator.calculateFeeByIds(feedIds);
@@ -189,22 +190,20 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
         for (uint256 i = 0; i < _feedIds.length; i++) {
             _feedIds[i] = _getCurrentFeedId(_feedIds[i]);
         }
-        uint256 count = _getNumberOfFastUpdateFeedIds(_feedIds);
-        if (count == _feedIds.length) {
-            return feeCalculator.calculateFeeByIds(_feedIds);
-        } else {
-            bytes21[] memory fastUpdateFeedIds = new bytes21[](count);
-            count = 0;
-            for (uint256 i = 0; i < _feedIds.length; i++) {
-                if (_isCalculatedFeedId(_feedIds[i])) {
-                    IICalculatedFeed calculatedFeed = calculatedFeedsData[_feedIds[i]].calculatedFeed;
-                    require(address(calculatedFeed) != address(0), "calculated feed id not supported");
-                    _fee += calculatedFeed.calculateFee();
-                } else {
-                    fastUpdateFeedIds[count] = _feedIds[i];
-                    count++;
-                }
+        bytes21[] memory fastUpdateFeedIds = new bytes21[](_getNumberOfFastUpdateFeedIds(_feedIds));
+        uint256 index = 0;
+        for (uint256 i = 0; i < _feedIds.length; i++) {
+            if (_isCalculatedFeedId(_feedIds[i])) {
+                IICalculatedFeed calculatedFeed = calculatedFeedsData[_feedIds[i]].calculatedFeed;
+                require(address(calculatedFeed) != address(0), "calculated feed id not supported");
+                _fee += calculatedFeed.calculateFee();
+            } else {
+                fastUpdatesConfiguration.getFeedIndex(_feedIds[i]); // check if feed id is supported
+                fastUpdateFeedIds[index] = _feedIds[i];
+                index++;
             }
+        }
+        if (index > 0) {
             _fee += feeCalculator.calculateFeeByIds(fastUpdateFeedIds);
         }
     }
