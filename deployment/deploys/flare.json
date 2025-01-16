@@ -52,7 +52,7 @@
   {
     "name": "Relay",
     "contractName": "Relay.sol",
-    "address": "0xea077600E3065F4FAd7161a6D0977741f2618eec"
+    "address": "0x57a4c3676d08Aa5d15410b5A6A80fBcEF72f3F45"
   },
   {
     "name": "WNatDelegationFee",
@@ -88,11 +88,6 @@
     "name": "PollingFoundation",
     "contractName": "PollingFoundation.sol",
     "address": "0xc8294a2335C6c45de827121090ce4Ba9977907D2"
-  },
-  {
-    "name": "PollingFtso",
-    "contractName": "PollingFtso.sol",
-    "address": "0x84e6790c97B48195161f899d3C509711e267B391"
   },
   {
     "name": "ValidatorRewardOffersManager",
@@ -258,5 +253,10 @@
     "name": "VoterPreRegistry",
     "contractName": "VoterPreRegistry.sol",
     "address": "0xeFDBf6F31Aa46c62414Aee82aF43036d16885b48"
+  },
+  {
+    "name": "PollingManagementGroup",
+    "contractName": "PollingManagementGroup.sol",
+    "address": "0x55233A9Ed066621e02b166C416f804b04ee4a03a"
   }
 ]
