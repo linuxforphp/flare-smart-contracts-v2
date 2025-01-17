@@ -407,13 +407,14 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
                 } else {
                     revert("feed id change does not exist");
                 }
-            } else
+            } else {
                 if (index == 0) { // add feed id change
                     changedFeedIds.push(_oldFeedIds[i]);
                     feedIdChanges[_oldFeedIds[i]] = FeedIdChange(_newFeedIds[i], uint88(changedFeedIds.length));
                 } else { // update feed id change
                     feedIdChanges[_oldFeedIds[i]].newFeedId = _newFeedIds[i];
                 }
+            }
             emit FeedIdChanged(_oldFeedIds[i], _newFeedIds[i]);
         }
     }
