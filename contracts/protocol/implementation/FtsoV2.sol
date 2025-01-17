@@ -8,18 +8,20 @@ import "../../userInterfaces/IFeeCalculator.sol";
 import "../../userInterfaces/IRelay.sol";
 import "../../governance/implementation/GovernedProxyImplementation.sol";
 import "../../utils/implementation/AddressUpdatable.sol";
-import "../../utils/lib/AddressSet.sol";
 import "../../ftso/interface/IICalculatedFeed.sol";
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation, AddressUpdatable {
     using MerkleProof for bytes32[];
-    using AddressSet for AddressSet.State;
 
     struct CalculatedFeedData {
         IICalculatedFeed calculatedFeed;
         uint96 index;  // index is 1-based, 0 means non-existent
+    }
+    struct FeedIdChange {
+        bytes21 newFeedId;
+        uint88 index;  // index is 1-based, 0 means non-existent
     }
 
     /// The FTSO protocol id.
@@ -36,8 +38,8 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
 
     bytes21[] private calculatedFeedIds;
     mapping(bytes21 feedId => CalculatedFeedData) private calculatedFeedsData;
-    mapping(bytes21 oldFeedId => bytes21 newFeedId) public feedIdChanges;
-
+    bytes21[] private changedFeedIds;
+    mapping(bytes21 oldFeedId => FeedIdChange) private feedIdChanges;
 
     /// Event emitted when a calculated feed is added.
     event CalculatedFeedAdded(bytes21 indexed feedId, IICalculatedFeed calculatedFeed);
@@ -99,7 +101,7 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
         // unusedIndicesLength <= fastUpdateFeedIds.length
         _feedIds = new bytes21[](fastUpdateFeedIds.length - unusedIndicesLength + calculatedFeedIds.length);
         uint256 index = 0;
-        // add fast update feed ids if not removed
+        // add fast update feed ids that are not removed (bytes21(0))
         for (uint256 i = 0; i < fastUpdateFeedIds.length; i++) {
             if (fastUpdateFeedIds[i] != bytes21(0)) {
                 _feedIds[index] = fastUpdateFeedIds[i];
@@ -367,11 +369,13 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
     function removeCalculatedFeeds(bytes21[] calldata _feedIds) external onlyGovernance {
         for (uint256 i = 0; i < _feedIds.length; i++) {
             CalculatedFeedData storage calculatedFeedData = calculatedFeedsData[_feedIds[i]];
-            require(calculatedFeedData.index != 0, "feed does not exist");
-            uint96 index = calculatedFeedData.index - 1;
-            if (calculatedFeedIds.length > 1) {
-                calculatedFeedIds[index] = calculatedFeedIds[calculatedFeedIds.length - 1];
-                calculatedFeedsData[calculatedFeedIds[index]].index = index + 1;
+            uint96 index = calculatedFeedData.index;
+            require(index != 0, "feed does not exist");
+            uint256 length = calculatedFeedIds.length; // length >= index > 0
+            if (index != length) {
+                bytes21 lastFeedId = calculatedFeedIds[length - 1];
+                calculatedFeedIds[index - 1] = lastFeedId;
+                calculatedFeedsData[lastFeedId].index = index;
             }
             calculatedFeedIds.pop();
             delete calculatedFeedsData[_feedIds[i]];
@@ -388,16 +392,62 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
     function changeFeedIds(bytes21[] calldata _oldFeedIds, bytes21[] calldata _newFeedIds) external onlyGovernance {
         require(_oldFeedIds.length == _newFeedIds.length, "array lengths do not match");
         for (uint256 i = 0; i < _oldFeedIds.length; i++) {
-            feedIdChanges[_oldFeedIds[i]] = _newFeedIds[i];
+            require(_oldFeedIds[i] != _newFeedIds[i], "feed ids are the same");
+            uint88 index = feedIdChanges[_oldFeedIds[i]].index;
+            if (_newFeedIds[i] == bytes21(0)) { // remove feed id change
+                if (index != 0) {
+                    uint256 length = changedFeedIds.length; // length >= index > 0
+                    if (index != length) {
+                        bytes21 lastFeedId = changedFeedIds[length - 1];
+                        feedIdChanges[lastFeedId].index = index;
+                        changedFeedIds[index - 1] = lastFeedId;
+                    }
+                    changedFeedIds.pop();
+                    delete feedIdChanges[_oldFeedIds[i]];
+                } else {
+                    revert("feed id change does not exist");
+                }
+            } else
+                if (index == 0) { // add feed id change
+                    changedFeedIds.push(_oldFeedIds[i]);
+                    feedIdChanges[_oldFeedIds[i]] = FeedIdChange(_newFeedIds[i], uint88(changedFeedIds.length));
+                } else { // update feed id change
+                    feedIdChanges[_oldFeedIds[i]].newFeedId = _newFeedIds[i];
+                }
             emit FeedIdChanged(_oldFeedIds[i], _newFeedIds[i]);
         }
     }
 
     /**
      * Returns the contract used with calculated feed or address zero if feed id is not supported.
+     * @param _feedId The feed id.
+     * @return _calculatedFeed The calculated feed contract.
      */
     function getCalculatedFeedContract(bytes21 _feedId) external view returns (IICalculatedFeed _calculatedFeed) {
         return calculatedFeedsData[_feedId].calculatedFeed;
+    }
+
+    /**
+     * Returns the calculated feed ids.
+     */
+    function getCalculatedFeedIds() external view returns (bytes21[] memory) {
+        return calculatedFeedIds;
+    }
+
+    /**
+     * Returns the feed id change or bytes21(0) if feed id is not changed.
+     * @param _oldFeedId The old feed id.
+     * @return _newFeedId The new feed id.
+     */
+    function getFeedIdChange(bytes21 _oldFeedId) external view returns (bytes21 _newFeedId) {
+        return feedIdChanges[_oldFeedId].newFeedId;
+    }
+
+    /**
+     * Returns the changed feed ids.
+     */
+    function getChangedFeedIds() external view returns (bytes21[] memory) {
+        return changedFeedIds;
     }
 
     /////////////////////////////// UUPS UPGRADABLE ///////////////////////////////
@@ -549,7 +599,7 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
         internal view
         returns (bytes21)
     {
-        bytes21 updatedFeedId = feedIdChanges[_feedId];
+        bytes21 updatedFeedId = feedIdChanges[_feedId].newFeedId;
         if (updatedFeedId != bytes21(0)) {
             return updatedFeedId;
         } else {
