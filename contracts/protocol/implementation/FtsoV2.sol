@@ -8,7 +8,7 @@ import "../../userInterfaces/IFeeCalculator.sol";
 import "../../userInterfaces/IRelay.sol";
 import "../../governance/implementation/GovernedProxyImplementation.sol";
 import "../../utils/implementation/AddressUpdatable.sol";
-import "../../ftso/interface/IICalculatedFeed.sol";
+import "../../calculatedFeeds/interface/IICalculatedFeed.sol";
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 
