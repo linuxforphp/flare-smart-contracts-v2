@@ -546,6 +546,7 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
                 uint256[] memory values;
                 int8[] memory decimals;
                 // set fast update feeds data - use all remaining balance for fees
+                //slither-disable-next-line arbitrary-send-eth
                 (values, decimals, _timestamp) = fastUpdater.fetchCurrentFeeds{value: address(this).balance} (indices);
                 uint256 index = 0;
                 for (uint256 i = 0; i < _feedIds.length; i++) {
