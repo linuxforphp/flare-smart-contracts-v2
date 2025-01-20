@@ -635,6 +635,65 @@ contract FtsoV2Test is Test {
         ftsoV2.getFeedsById(feedIds);
     }
 
+    function testGetFeedsByIdRevertFeeTooLow() public {
+        _addFeeds();
+        _addSFlrCalculatedFeed();
+        _mockGetPooledFlrByShares(123456);
+        _mockGetContractAddressByName("FastUpdatesConfiguration", address(fastUpdatesConfiguration));
+        _mockGetContractAddressByName("FastUpdater", address(fastUpdater));
+        _mockGetContractAddressByName("FeeCalculator", address(feeCalculator));
+        bytes21[] memory feedIds = new bytes21[](5);
+        feedIds[0] = flrFeedId;
+        feedIds[1] = bytes21("SGB");
+        feedIds[2] = bytes21("BTC");
+        feedIds[3] = bytes21("ETH");
+        feedIds[4] = sflrFeedId;
+        vm.expectRevert("too low fee");
+        (, , uint64 timestamp) =
+            ftsoV2.getFeedsById{value: 12 * 2 + 9 + 8} (feedIds);
+    }
+
+
+    function testGetFeedsByIdUseContractFunds() public {
+        _addFeeds();
+        _addSFlrCalculatedFeed();
+        _mockGetPooledFlrByShares(123456);
+        _mockGetContractAddressByName("FastUpdatesConfiguration", address(fastUpdatesConfiguration));
+        _mockGetContractAddressByName("FastUpdater", address(fastUpdater));
+        _mockGetContractAddressByName("FeeCalculator", address(feeCalculator));
+        bytes21[] memory feedIds = new bytes21[](5);
+        feedIds[0] = flrFeedId;
+        feedIds[1] = bytes21("SGB");
+        feedIds[2] = bytes21("BTC");
+        feedIds[3] = bytes21("ETH");
+        feedIds[4] = sflrFeedId;
+        vm.deal(address(ftsoV2), 100);
+        assertEq(address(ftsoV2).balance, 100);
+        assertEq(address(fastUpdater).balance, 0);
+        // send only fee for calculated feed
+        // fee for FU feeds will be paid from the contract balance
+        (uint256[] memory values, int8[] memory decimals, uint64 timestamp) =
+            ftsoV2.getFeedsById{value: 12} (feedIds);
+        assertEq(values.length, 5);
+        assertEq(values[0], 123456);
+        assertEq(decimals[0], 4);
+        assertEq(timestamp, 0);
+        assertEq(values[1], 1234567);
+        assertEq(decimals[1], 6);
+        assertEq(values[2], 12345678);
+        assertEq(decimals[2], -2);
+        assertEq(values[3], 9876543);
+        assertEq(decimals[3], 20);
+        assertEq(values[4], 123456 * 2);
+        assertEq(decimals[4], 4);
+        // whole FtsoV2 balance is used to pay for FU feeds
+        uint256 totalFee = 12 * 2 + 9 + 8 * 2;
+        assertEq(feeDestination.balance, totalFee);
+        assertEq(address(ftsoV2).balance, 0);
+        // remaining fee remains on the FastUpdater contract
+        assertEq(address(fastUpdater).balance, 100 - totalFee + 12);
+    }
+
     // calculate fee
     function testCalculateFeeById1() public {
         _addSFlrCalculatedFeed();
