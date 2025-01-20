@@ -185,27 +185,6 @@ contract FtsoV2Test is Test {
         vm.deal(voter, 1000 ether);
     }
 
-
-    //// IFastUpdater
-    // function testFetchCurrentFeeds() public {
-    //     _addFeeds();
-    //     uint256[] memory indices = new uint256[](2);
-    //     indices[0] = 0;
-    //     indices[1] = 1;
-    //     (uint256[] memory feeds, int8[] memory decimals, uint64 timestamp) = ftsoV2.fetchCurrentFeeds(indices);
-    //     assertEq(feeds.length, 2);
-    //     assertEq(feeds[0], 100 * 10 ** (4 - 1));
-    //     assertEq(feeds[1], 200 * 10 ** (5 - 1));
-    //     assertEq(decimals.length, 2);
-    //     assertEq(decimals[0], 4);
-    //     assertEq(decimals[1], 5);
-    //     assertEq(timestamp, 0);
-
-    //     indices = new uint256[](1);
-    //     indices[0] = 2;
-    //     (feeds, decimals, timestamp) = ftsoV2.fetchCurrentFeeds(indices);
-    // }
-
     function testGetFeedId() public {
         _addFeeds();
         assertEq(ftsoV2.getFeedId(0), flrFeedId);
