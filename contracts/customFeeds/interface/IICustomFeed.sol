@@ -3,9 +3,9 @@
 pragma solidity >=0.7.6 <0.9;
 
 /**
- * IICalculatedFeed interface.
+ * IICustomFeed interface.
  */
-interface IICalculatedFeed {
+interface IICustomFeed {
 
     /**
      * Returns the feed id.

@@ -5,17 +5,17 @@ import "flare-smart-contracts/contracts/userInterfaces/IFlareContractRegistry.so
 import "../../userInterfaces/IFeeCalculator.sol";
 import "../../userInterfaces/IFastUpdater.sol";
 import "../../userInterfaces/IFastUpdatesConfiguration.sol";
-import "../interface/IICalculatedFeed.sol";
+import "../interface/IICustomFeed.sol";
 
 interface ISFlr {
     function getPooledFlrByShares(uint256) external view returns (uint256);
 }
 
 /**
- * SFlrCalculatedFeed contract.
- * The contract is used to calculate the SFLR feed using the reference feed and the SFLR contract.
+ * SFlrCustomFeed contract.
+ * The contract is used to calculate the sFLR custom feed using the reference feed (FLR) and the sFLR contract.
  */
-contract SFlrCalculatedFeed is IICalculatedFeed {
+contract SFlrCustomFeed is IICustomFeed {
 
     /// The feed id.
     bytes21 public immutable feedId;
@@ -46,7 +46,7 @@ contract SFlrCalculatedFeed is IICalculatedFeed {
     }
 
     /**
-     * @inheritdoc IICalculatedFeed
+     * @inheritdoc IICustomFeed
      */
     function getCurrentFeed() external payable returns (uint256 _value, int8 _decimals, uint64 _timestamp) {
         IFastUpdatesConfiguration fastUpdatesConfiguration =
@@ -63,7 +63,7 @@ contract SFlrCalculatedFeed is IICalculatedFeed {
     }
 
     /**
-     * @inheritdoc IICalculatedFeed
+     * @inheritdoc IICustomFeed
      */
     function calculateFee() external view returns (uint256 _fee) {
         IFeeCalculator feeCalculator = IFeeCalculator(flareContractRegistry.getContractAddressByName("FeeCalculator"));

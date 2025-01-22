@@ -2,11 +2,11 @@
 pragma solidity 0.8.20;
 
 import "forge-std/Test.sol";
-import "../../../../contracts/calculatedFeeds/implementation/SFlrCalculatedFeed.sol";
+import "../../../../contracts/customFeeds/implementation/SFlrCustomFeed.sol";
 
-contract SFlrCalculatedFeedTest is Test {
+contract SFlrCustomFeedTest is Test {
 
-    SFlrCalculatedFeed private sFlrCalculatedFeed;
+    SFlrCustomFeed private sFlrCustomFeed;
     address private mockFlareContractRegistry;
     address private mockSFlr;
     address private mockFastUpdatesConfiguration;
@@ -24,7 +24,7 @@ contract SFlrCalculatedFeedTest is Test {
         mockFastUpdatesConfiguration = makeAddr("FastUpdatesConfiguration");
         mockFastUpdater = makeAddr("FastUpdater");
         mockFeeCalculator = makeAddr("FeeCalculator");
-        sFlrCalculatedFeed = new SFlrCalculatedFeed(
+        sFlrCustomFeed = new SFlrCustomFeed(
             feedId,
             referenceFeedId,
             IFlareContractRegistry(mockFlareContractRegistry),
@@ -58,7 +58,7 @@ contract SFlrCalculatedFeedTest is Test {
             )
         );
 
-        (uint256 returnValue, int8 returnDecimals, uint64 returnTimestamp) = sFlrCalculatedFeed.getCurrentFeed();
+        (uint256 returnValue, int8 returnDecimals, uint64 returnTimestamp) = sFlrCustomFeed.getCurrentFeed();
         assertEq(returnValue, 100 * 2);
         assertEq(returnDecimals, 18);
         assertEq(returnTimestamp, 987654321);
@@ -74,7 +74,7 @@ contract SFlrCalculatedFeedTest is Test {
             abi.encodeWithSelector(IFeeCalculator.calculateFeeByIds.selector, feedIds),
             abi.encode(fee)
         );
-        assertEq(sFlrCalculatedFeed.calculateFee(), fee);
+        assertEq(sFlrCustomFeed.calculateFee(), fee);
     }
 
 

@@ -8,7 +8,7 @@ import "../../../../contracts/userInterfaces/IFeeCalculator.sol";
 import { FastUpdater } from "../../../../contracts/fastUpdates/implementation/FastUpdater.sol";
 import "../../../../contracts/fastUpdates/implementation/FastUpdatesConfiguration.sol";
 import "../../../../contracts/fastUpdates/implementation/FastUpdateIncentiveManager.sol";
-import "../../../../contracts/calculatedFeeds/implementation/SFlrCalculatedFeed.sol";
+import "../../../../contracts/customFeeds/implementation/SFlrCustomFeed.sol";
 import "../../../../contracts/fastUpdates/implementation/FeeCalculator.sol";
 import "../../../../contracts/protocol/implementation/FtsoV2Proxy.sol";
 
@@ -21,7 +21,7 @@ contract FtsoV2Test is Test {
     FastUpdater private fastUpdater;
     FastUpdatesConfiguration private fastUpdatesConfiguration;
     address private mockFlareContractRegistry;
-    SFlrCalculatedFeed private sFlrCalculatedFeed;
+    SFlrCustomFeed private sFlrCustomFeed;
     address private sFlr;
     FeeCalculator private feeCalculator;
 
@@ -53,10 +53,9 @@ contract FtsoV2Test is Test {
 
     address private voter;
 
-    event CalculatedFeedAdded(bytes21 indexed feedId, IICalculatedFeed calculatedFeed);
-    event CalculatedFeedReplaced(
-        bytes21 indexed feedId, IICalculatedFeed oldCalculatedFeed, IICalculatedFeed newCalculatedFeed);
-    event CalculatedFeedRemoved(bytes21 indexed feedId);
+    event CustomFeedAdded(bytes21 indexed feedId, IICustomFeed customFeed);
+    event CustomFeedReplaced(bytes21 indexed feedId, IICustomFeed oldCustomFeed, IICustomFeed newCustomFeed);
+    event CustomFeedRemoved(bytes21 indexed feedId);
     event FeedIdChanged(bytes21 indexed oldFeedId, bytes21 indexed newFeedId);
 
     function setUp() public {
@@ -115,7 +114,7 @@ contract FtsoV2Test is Test {
             8
         );
 
-        sFlrCalculatedFeed = new SFlrCalculatedFeed(
+        sFlrCustomFeed = new SFlrCustomFeed(
             sflrFeedId,
             flrFeedId,
             IFlareContractRegistry(mockFlareContractRegistry),
@@ -441,110 +440,110 @@ contract FtsoV2Test is Test {
         ftsoV2.verifyFeedData(feedDataWithProof);
     }
 
-    function testAddCalculatedFeeds() public {
+    function testAddCustomFeeds() public {
         assertEq(ftsoV2.getSupportedFeedIds().length, 0);
-        assertEq(ftsoV2.getCalculatedFeedIds().length, 0);
+        assertEq(ftsoV2.getCustomFeedIds().length, 0);
         vm.expectEmit();
-        emit CalculatedFeedAdded(sflrFeedId, sFlrCalculatedFeed);
-        _addSFlrCalculatedFeed();
+        emit CustomFeedAdded(sflrFeedId, sFlrCustomFeed);
+        _addSFlrCustomFeed();
         assertEq(ftsoV2.getSupportedFeedIds().length, 1);
-        assertEq((ftsoV2.getCalculatedFeedIds())[0], sflrFeedId);
+        assertEq((ftsoV2.getCustomFeedIds())[0], sflrFeedId);
     }
 
-    function testAddCalculatedFeedsRevertInvalidCategory() public {
-        SFlrCalculatedFeed invalidFeed = new SFlrCalculatedFeed(
+    function testAddCustomFeedsRevertInvalidCategory() public {
+        SFlrCustomFeed invalidFeed = new SFlrCustomFeed(
             bytes21(bytes.concat(bytes1(uint8(uint8(0))), bytes("SFLR"))),
             flrFeedId,
             IFlareContractRegistry(mockFlareContractRegistry),
             ISFlr(makeAddr("sFlr"))
         );
-        IICalculatedFeed[] memory calculatedFeeds = new IICalculatedFeed[](1);
-        calculatedFeeds[0] = invalidFeed;
+        IICustomFeed[] memory customFeeds = new IICustomFeed[](1);
+        customFeeds[0] = invalidFeed;
         vm.prank(governance);
         vm.expectRevert("invalid feed category");
-        ftsoV2.addCalculatedFeeds(calculatedFeeds);
+        ftsoV2.addCustomFeeds(customFeeds);
     }
 
-    function testAddCalculatedFeedsRevertAlreadyExists() public {
-        IICalculatedFeed[] memory calculatedFeeds = new IICalculatedFeed[](1);
-        calculatedFeeds[0] = sFlrCalculatedFeed;
+    function testAddCustomFeedsRevertAlreadyExists() public {
+        IICustomFeed[] memory customFeeds = new IICustomFeed[](1);
+        customFeeds[0] = sFlrCustomFeed;
         vm.startPrank(governance);
-        ftsoV2.addCalculatedFeeds(calculatedFeeds);
+        ftsoV2.addCustomFeeds(customFeeds);
         vm.expectRevert("feed already exists");
-        ftsoV2.addCalculatedFeeds(calculatedFeeds);
+        ftsoV2.addCustomFeeds(customFeeds);
         vm.stopPrank();
     }
 
-    function testReplaceCalculatedFeeds() public {
-        IICalculatedFeed[] memory calculatedFeeds = new IICalculatedFeed[](1);
-        calculatedFeeds[0] = sFlrCalculatedFeed;
+    function testReplaceCustomFeeds() public {
+        IICustomFeed[] memory customFeeds = new IICustomFeed[](1);
+        customFeeds[0] = sFlrCustomFeed;
         vm.prank(governance);
-        ftsoV2.addCalculatedFeeds(calculatedFeeds);
-        assertEq(address(ftsoV2.getCalculatedFeedContract(sflrFeedId)), address(sFlrCalculatedFeed));
+        ftsoV2.addCustomFeeds(customFeeds);
+        assertEq(address(ftsoV2.getCustomFeedContract(sflrFeedId)), address(sFlrCustomFeed));
 
-        SFlrCalculatedFeed newFeed = new SFlrCalculatedFeed(
+        SFlrCustomFeed newFeed = new SFlrCustomFeed(
             sflrFeedId,
             flrFeedId,
             IFlareContractRegistry(mockFlareContractRegistry),
             ISFlr(sFlr)
         );
-        calculatedFeeds[0] = newFeed;
+        customFeeds[0] = newFeed;
         vm.prank(governance);
         vm.expectEmit();
-        emit CalculatedFeedReplaced(sflrFeedId, sFlrCalculatedFeed, newFeed);
-        ftsoV2.replaceCalculatedFeeds(calculatedFeeds);
-        assertEq(address(ftsoV2.getCalculatedFeedContract(sflrFeedId)), address(newFeed));
+        emit CustomFeedReplaced(sflrFeedId, sFlrCustomFeed, newFeed);
+        ftsoV2.replaceCustomFeeds(customFeeds);
+        assertEq(address(ftsoV2.getCustomFeedContract(sflrFeedId)), address(newFeed));
     }
 
-    function testReplaceCalculatedFeedsDoesntExists() public {
-        IICalculatedFeed[] memory calculatedFeeds = new IICalculatedFeed[](1);
-        calculatedFeeds[0] = sFlrCalculatedFeed;
+    function testReplaceCustomFeedsDoesntExists() public {
+        IICustomFeed[] memory customFeeds = new IICustomFeed[](1);
+        customFeeds[0] = sFlrCustomFeed;
         vm.prank(governance);
         vm.expectRevert("feed does not exist");
-        ftsoV2.replaceCalculatedFeeds(calculatedFeeds);
+        ftsoV2.replaceCustomFeeds(customFeeds);
     }
 
-    function testRemoveCalculatedFeeds1() public {
-        _addSFlrCalculatedFeed();
-        // add another calculated feed
-        SFlrCalculatedFeed sFlrCalculatedFeed1 = new SFlrCalculatedFeed(
+    function testRemoveCustomFeeds1() public {
+        _addSFlrCustomFeed();
+        // add another custom feed
+        SFlrCustomFeed sFlrCustomFeed1 = new SFlrCustomFeed(
             bytes21(bytes.concat(bytes1(uint8(51)), bytes("SFLR"))),
             flrFeedId,
             IFlareContractRegistry(mockFlareContractRegistry),
             ISFlr(sFlr)
         );
-        IICalculatedFeed[] memory calculatedFeeds = new IICalculatedFeed[](1);
-        calculatedFeeds[0] = sFlrCalculatedFeed1;
+        IICustomFeed[] memory customFeeds = new IICustomFeed[](1);
+        customFeeds[0] = sFlrCustomFeed1;
         vm.prank(governance);
-        ftsoV2.addCalculatedFeeds(calculatedFeeds);
+        ftsoV2.addCustomFeeds(customFeeds);
         bytes21[] memory feedIds = new bytes21[](1);
         feedIds[0] = sflrFeedId;
-        assertEq(address(ftsoV2.getCalculatedFeedContract(sflrFeedId)), address(sFlrCalculatedFeed));
+        assertEq(address(ftsoV2.getCustomFeedContract(sflrFeedId)), address(sFlrCustomFeed));
         vm.prank(governance);
-        ftsoV2.removeCalculatedFeeds(feedIds);
-        assertEq(address(ftsoV2.getCalculatedFeedContract(sflrFeedId)), address(0));
+        ftsoV2.removeCustomFeeds(feedIds);
+        assertEq(address(ftsoV2.getCustomFeedContract(sflrFeedId)), address(0));
     }
 
-    function testRemoveCalculatedFeeds2() public {
-        _addSFlrCalculatedFeed();
+    function testRemoveCustomFeeds2() public {
+        _addSFlrCustomFeed();
         bytes21[] memory feedIds = new bytes21[](1);
         feedIds[0] = sflrFeedId;
-        assertEq(address(ftsoV2.getCalculatedFeedContract(sflrFeedId)), address(sFlrCalculatedFeed));
+        assertEq(address(ftsoV2.getCustomFeedContract(sflrFeedId)), address(sFlrCustomFeed));
         vm.prank(governance);
-        ftsoV2.removeCalculatedFeeds(feedIds);
-        assertEq(address(ftsoV2.getCalculatedFeedContract(sflrFeedId)), address(0));
+        ftsoV2.removeCustomFeeds(feedIds);
+        assertEq(address(ftsoV2.getCustomFeedContract(sflrFeedId)), address(0));
     }
 
-    function testRemoveCalculatedFeedsRevertDoesntExist() public {
+    function testRemoveCustomFeedsRevertDoesntExist() public {
         bytes21[] memory feedIds = new bytes21[](1);
         feedIds[0] = bytes21("wrong feed");
         vm.prank(governance);
         vm.expectRevert("feed does not exist");
-        ftsoV2.removeCalculatedFeeds(feedIds);
+        ftsoV2.removeCustomFeeds(feedIds);
     }
 
     function testGetSupportedFeedIds() public {
-        _addSFlrCalculatedFeed();
+        _addSFlrCustomFeed();
         _addFeeds();
         bytes21[] memory feedIds = ftsoV2.getSupportedFeedIds();
         assertEq(feedIds.length, 5);
@@ -567,16 +566,16 @@ contract FtsoV2Test is Test {
         assertEq(feedIds[3], sflrFeedId);
     }
 
-    // feed index for calculated feeds doesn't exist
+    // feed index for custom feeds doesn't exist
     function getFeedIndexRevert() public {
-        _addSFlrCalculatedFeed();
+        _addSFlrCustomFeed();
         vm.expectRevert("feed does not exist");
         ftsoV2.getFeedIndex(sflrFeedId);
     }
 
-    // get calculated feed
+    // get custom feed
     function testGetFeedById1() public {
-        _addSFlrCalculatedFeed();
+        _addSFlrCustomFeed();
         _addFeeds();
 
         _mockGetPooledFlrByShares(123456);
@@ -591,13 +590,13 @@ contract FtsoV2Test is Test {
     }
 
     function testGetFeedByIdRevert() public {
-        vm.expectRevert("calculated feed id not supported");
+        vm.expectRevert("custom feed id not supported");
         ftsoV2.getFeedById(sflrFeedId);
     }
 
-    // one FU feed and one calculated feed
+    // one FU feed and one custom feed
     function testGetFeedsById1() public {
-        _addSFlrCalculatedFeed();
+        _addSFlrCustomFeed();
         _addFeeds();
         _mockGetPooledFlrByShares(123456);
         _mockGetContractAddressByName("FastUpdatesConfiguration", address(fastUpdatesConfiguration));
@@ -631,13 +630,13 @@ contract FtsoV2Test is Test {
         bytes21[] memory feedIds = new bytes21[](2);
         feedIds[0] = flrFeedId;
         feedIds[1] = sflrFeedId;
-        vm.expectRevert("calculated feed id not supported");
+        vm.expectRevert("custom feed id not supported");
         ftsoV2.getFeedsById(feedIds);
     }
 
     function testGetFeedsByIdRevertFeeTooLow() public {
         _addFeeds();
-        _addSFlrCalculatedFeed();
+        _addSFlrCustomFeed();
         _mockGetPooledFlrByShares(123456);
         _mockGetContractAddressByName("FastUpdatesConfiguration", address(fastUpdatesConfiguration));
         _mockGetContractAddressByName("FastUpdater", address(fastUpdater));
@@ -656,7 +655,7 @@ contract FtsoV2Test is Test {
 
     function testGetFeedsByIdUseContractFunds() public {
         _addFeeds();
-        _addSFlrCalculatedFeed();
+        _addSFlrCustomFeed();
         _mockGetPooledFlrByShares(123456);
         _mockGetContractAddressByName("FastUpdatesConfiguration", address(fastUpdatesConfiguration));
         _mockGetContractAddressByName("FastUpdater", address(fastUpdater));
@@ -670,7 +669,7 @@ contract FtsoV2Test is Test {
         vm.deal(address(ftsoV2), 100);
         assertEq(address(ftsoV2).balance, 100);
         assertEq(address(fastUpdater).balance, 0);
-        // send only fee for calculated feed
+        // send only fee for custom feed
         // fee for FU feeds will be paid from the contract balance
         (uint256[] memory values, int8[] memory decimals, uint64 timestamp) =
             ftsoV2.getFeedsById{value: 12} (feedIds);
@@ -696,7 +695,7 @@ contract FtsoV2Test is Test {
 
     // calculate fee
     function testCalculateFeeById1() public {
-        _addSFlrCalculatedFeed();
+        _addSFlrCustomFeed();
         uint256 fee = 8;
         _mockGetContractAddressByName("FeeCalculator", address(feeCalculator));
         assertEq(ftsoV2.calculateFeeById(sflrFeedId), fee);
@@ -709,7 +708,7 @@ contract FtsoV2Test is Test {
     }
 
     function testCalculateFeedByIdRevert() public {
-        vm.expectRevert("calculated feed id not supported");
+        vm.expectRevert("custom feed id not supported");
         ftsoV2.calculateFeeById(sflrFeedId);
     }
 
@@ -727,9 +726,9 @@ contract FtsoV2Test is Test {
         assertEq(ftsoV2.calculateFeeByIds(feedIds), 12 + 9);
     }
 
-    // FU feeds and calculated feeds
+    // FU feeds and custom feeds
     function testCalculateFeeByIds2() public {
-        _addSFlrCalculatedFeed();
+        _addSFlrCustomFeed();
         _addFeeds();
         _mockGetContractAddressByName("FeeCalculator", address(feeCalculator));
         bytes21[] memory fuFeedIds = new bytes21[](2);
@@ -750,12 +749,12 @@ contract FtsoV2Test is Test {
         feedIds[0] = flrFeedId;
         feedIds[1] = bytes21("SGB");
         feedIds[2] = sflrFeedId;
-        vm.expectRevert("calculated feed id not supported");
+        vm.expectRevert("custom feed id not supported");
         ftsoV2.calculateFeeByIds(feedIds);
     }
 
     function testCalculateFeeByIdsRevertInvalidId() public {
-        _addSFlrCalculatedFeed();
+        _addSFlrCustomFeed();
         _addFeeds();
         _mockGetContractAddressByName("FeeCalculator", address(feeCalculator));
         bytes21[] memory feedIds = new bytes21[](3);
@@ -921,7 +920,7 @@ contract FtsoV2Test is Test {
 
     //// Proxy upgrade
     function testUpgradeProxy() public {
-        testAddCalculatedFeeds();
+        testAddCustomFeeds();
         assertEq(ftsoV2.getSupportedFeedIds().length, 1);
         assertEq(ftsoV2.implementation(), address(ftsoV2Implementation));
         // upgrade
@@ -958,14 +957,14 @@ contract FtsoV2Test is Test {
     function testUpgradeToAndCall() public {
         FtsoV2 newFtsoV2Impl = new FtsoV2();
         assertEq(ftsoV2.getSupportedFeedIds().length, 0);
-        IICalculatedFeed[] memory calculatedFeeds = new IICalculatedFeed[](1);
-        calculatedFeeds[0] = sFlrCalculatedFeed;
+        IICustomFeed[] memory customFeeds = new IICustomFeed[](1);
+        customFeeds[0] = sFlrCustomFeed;
         vm.expectEmit();
-        emit CalculatedFeedAdded(sflrFeedId, sFlrCalculatedFeed);
+        emit CustomFeedAdded(sflrFeedId, sFlrCustomFeed);
         vm.prank(governance);
         ftsoV2.upgradeToAndCall(
             address(newFtsoV2Impl),
-            abi.encodeCall(FtsoV2.addCalculatedFeeds, (calculatedFeeds))
+            abi.encodeCall(FtsoV2.addCustomFeeds, (customFeeds))
         );
         assertEq(ftsoV2.getSupportedFeedIds().length, 1);
     }
@@ -1061,11 +1060,11 @@ contract FtsoV2Test is Test {
         feeCalculator.setFeedsFees(feedIds, fees);
     }
 
-    function _addSFlrCalculatedFeed() private {
-        IICalculatedFeed[] memory calculatedFeeds = new IICalculatedFeed[](1);
-        calculatedFeeds[0] = sFlrCalculatedFeed;
+    function _addSFlrCustomFeed() private {
+        IICustomFeed[] memory customFeeds = new IICustomFeed[](1);
+        customFeeds[0] = sFlrCustomFeed;
         vm.prank(governance);
-        ftsoV2.addCalculatedFeeds(calculatedFeeds);
+        ftsoV2.addCustomFeeds(customFeeds);
     }
 
     function _mockGetContractAddressByName(string memory _contractName, address _contractAddr) private {
