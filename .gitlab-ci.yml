@@ -219,7 +219,7 @@ coverage-forge-node_modules:
     - node_modules.sol.zip
 
 coverage-forge:
-  image: ghcr.io/foundry-rs/foundry
+  image: ghcr.io/foundry-rs/foundry:stable
   needs:
   - job: coverage-forge-node_modules
     artifacts: true
