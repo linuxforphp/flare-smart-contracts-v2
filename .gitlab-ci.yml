@@ -166,7 +166,7 @@ test-unit-forge:
   extends: .test-node-sc
   timeout: 10 minutes
   tags: [ flarenetwork-md ]
-  image: ghcr.io/foundry-rs/foundry
+  image: ghcr.io/foundry-rs/foundry:stable
   before_script:
   - forge install
   script:
