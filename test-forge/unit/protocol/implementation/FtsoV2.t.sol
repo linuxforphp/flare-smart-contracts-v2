@@ -442,12 +442,13 @@ contract FtsoV2Test is Test {
 
     function testAddCustomFeeds() public {
         assertEq(ftsoV2.getSupportedFeedIds().length, 0);
-        assertEq(ftsoV2.getCustomFeedIds().length, 0);
+        assertEq(ftsoV2.getCustomFeeds().length, 0);
         vm.expectEmit();
         emit CustomFeedAdded(sflrFeedId, sFlrCustomFeed);
         _addSFlrCustomFeed();
         assertEq(ftsoV2.getSupportedFeedIds().length, 1);
-        assertEq((ftsoV2.getCustomFeedIds())[0], sflrFeedId);
+        assertEq(ftsoV2.getCustomFeeds()[0].feedId, sflrFeedId);
+        assertEq(address(ftsoV2.getCustomFeeds()[0].customFeed), address(sFlrCustomFeed));
     }
 
     function testAddCustomFeedsRevertInvalidCategory() public {
@@ -479,7 +480,9 @@ contract FtsoV2Test is Test {
         customFeeds[0] = sFlrCustomFeed;
         vm.prank(governance);
         ftsoV2.addCustomFeeds(customFeeds);
-        assertEq(address(ftsoV2.getCustomFeedContract(sflrFeedId)), address(sFlrCustomFeed));
+        assertEq(ftsoV2.getCustomFeeds().length, 1);
+        assertEq(ftsoV2.getCustomFeeds()[0].feedId, sflrFeedId);
+        assertEq(address(ftsoV2.getCustomFeeds()[0].customFeed), address(sFlrCustomFeed));
 
         SFlrCustomFeed newFeed = new SFlrCustomFeed(
             sflrFeedId,
@@ -492,7 +495,9 @@ contract FtsoV2Test is Test {
         vm.expectEmit();
         emit CustomFeedReplaced(sflrFeedId, sFlrCustomFeed, newFeed);
         ftsoV2.replaceCustomFeeds(customFeeds);
-        assertEq(address(ftsoV2.getCustomFeedContract(sflrFeedId)), address(newFeed));
+        assertEq(ftsoV2.getCustomFeeds().length, 1);
+        assertEq(ftsoV2.getCustomFeeds()[0].feedId, sflrFeedId);
+        assertEq(address(ftsoV2.getCustomFeeds()[0].customFeed), address(newFeed));
     }
 
     function testReplaceCustomFeedsDoesntExists() public {
@@ -506,8 +511,9 @@ contract FtsoV2Test is Test {
     function testRemoveCustomFeeds1() public {
         _addSFlrCustomFeed();
         // add another custom feed
+        bytes21 sflrFeedId1 = bytes21(bytes.concat(bytes1(uint8(51)), bytes("SFLR")));
         SFlrCustomFeed sFlrCustomFeed1 = new SFlrCustomFeed(
-            bytes21(bytes.concat(bytes1(uint8(51)), bytes("SFLR"))),
+            sflrFeedId1,
             flrFeedId,
             IFlareContractRegistry(mockFlareContractRegistry),
             ISFlr(sFlr)
@@ -518,20 +524,28 @@ contract FtsoV2Test is Test {
         ftsoV2.addCustomFeeds(customFeeds);
         bytes21[] memory feedIds = new bytes21[](1);
         feedIds[0] = sflrFeedId;
-        assertEq(address(ftsoV2.getCustomFeedContract(sflrFeedId)), address(sFlrCustomFeed));
+        assertEq(ftsoV2.getCustomFeeds().length, 2);
+        assertEq(ftsoV2.getCustomFeeds()[0].feedId, sflrFeedId);
+        assertEq(address(ftsoV2.getCustomFeeds()[0].customFeed), address(sFlrCustomFeed));
+        assertEq(ftsoV2.getCustomFeeds()[1].feedId, sflrFeedId1);
+        assertEq(address(ftsoV2.getCustomFeeds()[1].customFeed), address(sFlrCustomFeed1));
         vm.prank(governance);
         ftsoV2.removeCustomFeeds(feedIds);
-        assertEq(address(ftsoV2.getCustomFeedContract(sflrFeedId)), address(0));
+        assertEq(ftsoV2.getCustomFeeds().length, 1);
+        assertEq(ftsoV2.getCustomFeeds()[0].feedId, sflrFeedId1);
+        assertEq(address(ftsoV2.getCustomFeeds()[0].customFeed), address(sFlrCustomFeed1));
     }
 
     function testRemoveCustomFeeds2() public {
         _addSFlrCustomFeed();
         bytes21[] memory feedIds = new bytes21[](1);
         feedIds[0] = sflrFeedId;
-        assertEq(address(ftsoV2.getCustomFeedContract(sflrFeedId)), address(sFlrCustomFeed));
+        assertEq(ftsoV2.getCustomFeeds().length, 1);
+        assertEq(ftsoV2.getCustomFeeds()[0].feedId, sflrFeedId);
+        assertEq(address(ftsoV2.getCustomFeeds()[0].customFeed), address(sFlrCustomFeed));
         vm.prank(governance);
         ftsoV2.removeCustomFeeds(feedIds);
-        assertEq(address(ftsoV2.getCustomFeedContract(sflrFeedId)), address(0));
+        assertEq(ftsoV2.getCustomFeeds().length, 0);
     }
 
     function testRemoveCustomFeedsRevertDoesntExist() public {
@@ -648,8 +662,7 @@ contract FtsoV2Test is Test {
         feedIds[3] = bytes21("ETH");
         feedIds[4] = sflrFeedId;
         vm.expectRevert("too low fee");
-        (, , uint64 timestamp) =
-            ftsoV2.getFeedsById{value: 12 * 2 + 9 + 8} (feedIds);
+        ftsoV2.getFeedsById{value: 12 * 2 + 9 + 8} (feedIds);
     }
 
 
@@ -783,22 +796,14 @@ contract FtsoV2Test is Test {
         assertEq(ftsoV2.getFtsoProtocolId(), 100);
     }
 
-    function testChangeFeedIdsRevert() public {
-        vm.prank(governance);
-        vm.expectRevert("array lengths do not match");
-        ftsoV2.changeFeedIds(new bytes21[](1), new bytes21[](0));
-    }
-
     function testChangeFeedId() public {
         _addFeeds();
-        bytes21[] memory oldFeedIds = new bytes21[](1);
-        oldFeedIds[0] = bytes21("oldSGB");
-        bytes21[] memory newFeedIds = new bytes21[](1);
-        newFeedIds[0] = bytes21("SGB");
+        FtsoV2Interface.FeedIdChange[] memory feedIdChanges = new FtsoV2Interface.FeedIdChange[](1);
+        feedIdChanges[0] = FtsoV2Interface.FeedIdChange(bytes21("oldSGB"), bytes21("SGB"));
         vm.prank(governance);
         vm.expectEmit();
-        emit FeedIdChanged(oldFeedIds[0], newFeedIds[0]);
-        ftsoV2.changeFeedIds(oldFeedIds, newFeedIds);
+        emit FeedIdChanged(feedIdChanges[0].oldFeedId, feedIdChanges[0].newFeedId);
+        ftsoV2.changeFeedIds(feedIdChanges);
 
         // calculate fee
         assertEq(ftsoV2.calculateFeeById(bytes21("oldSGB")), 9);
@@ -807,115 +812,102 @@ contract FtsoV2Test is Test {
         (uint256 value, int8 decimals, ) = ftsoV2.getFeedById{value: 9} (bytes21("oldSGB"));
         assertEq(value, 1234567);
         assertEq(decimals, 6);
+
+        assertEq(ftsoV2.getFeedIdChanges().length, 1);
+        assertEq(ftsoV2.getFeedIdChanges()[0].oldFeedId, bytes21("oldSGB"));
+        assertEq(ftsoV2.getFeedIdChanges()[0].newFeedId, bytes21("SGB"));
     }
 
-    function testGetFeedIdChange() public {
-        testChangeFeedId();
-        assertEq(ftsoV2.getFeedIdChange(bytes21("oldSGB")), bytes21("SGB"));
-        assertEq(ftsoV2.getFeedIdChange(bytes21("BTC")), bytes21(0));
-    }
-
-    function testGetChangedFeedIds() public {
+    function testGetFeedIdChanges() public {
         _addFeeds();
-        assertEq(ftsoV2.getChangedFeedIds().length, 0);
-        bytes21[] memory oldFeedIds = new bytes21[](2);
-        oldFeedIds[0] = bytes21("oldSGB");
-        oldFeedIds[1] = bytes21("oldBTC");
-        bytes21[] memory newFeedIds = new bytes21[](2);
-        newFeedIds[0] = bytes21("SGB");
-        newFeedIds[1] = bytes21("BTC");
+        assertEq(ftsoV2.getFeedIdChanges().length, 0);
+        FtsoV2Interface.FeedIdChange[] memory feedIdChanges = new FtsoV2Interface.FeedIdChange[](2);
+        feedIdChanges[0] = FtsoV2Interface.FeedIdChange(bytes21("oldSGB"), bytes21("SGB"));
+        feedIdChanges[1] = FtsoV2Interface.FeedIdChange(bytes21("oldBTC"), bytes21("BTC"));
         vm.prank(governance);
         vm.expectEmit();
-        emit FeedIdChanged(oldFeedIds[0], newFeedIds[0]);
+        emit FeedIdChanged(feedIdChanges[0].oldFeedId, feedIdChanges[0].newFeedId);
         vm.expectEmit();
-        emit FeedIdChanged(oldFeedIds[1], newFeedIds[1]);
-        ftsoV2.changeFeedIds(oldFeedIds, newFeedIds);
-        assertEq(ftsoV2.getChangedFeedIds().length, 2);
-        assertEq(ftsoV2.getChangedFeedIds()[0], bytes21("oldSGB"));
-        assertEq(ftsoV2.getChangedFeedIds()[1], bytes21("oldBTC"));
+        emit FeedIdChanged(feedIdChanges[1].oldFeedId, feedIdChanges[1].newFeedId);
+        ftsoV2.changeFeedIds(feedIdChanges);
+        assertEq(ftsoV2.getFeedIdChanges().length, 2);
+        assertEq(ftsoV2.getFeedIdChanges()[0].oldFeedId, bytes21("oldSGB"));
+        assertEq(ftsoV2.getFeedIdChanges()[0].newFeedId, bytes21("SGB"));
+        assertEq(ftsoV2.getFeedIdChanges()[1].oldFeedId, bytes21("oldBTC"));
+        assertEq(ftsoV2.getFeedIdChanges()[1].newFeedId, bytes21("BTC"));
     }
 
     function testRemoveFeedIdsChange() public {
-        bytes21[] memory oldFeedIds = new bytes21[](3);
-        oldFeedIds[0] = bytes21("oldSGB");
-        oldFeedIds[1] = bytes21("oldBTC");
-        oldFeedIds[2] = bytes21("oldETH");
-        bytes21[] memory newFeedIds = new bytes21[](3);
-        newFeedIds[0] = bytes21("SGB");
-        newFeedIds[1] = bytes21("BTC");
-        newFeedIds[2] = bytes21("ETH");
+        FtsoV2Interface.FeedIdChange[] memory feedIdChanges = new FtsoV2Interface.FeedIdChange[](3);
+        feedIdChanges[0] = FtsoV2Interface.FeedIdChange(bytes21("oldSGB"), bytes21("SGB"));
+        feedIdChanges[1] = FtsoV2Interface.FeedIdChange(bytes21("oldBTC"), bytes21("BTC"));
+        feedIdChanges[2] = FtsoV2Interface.FeedIdChange(bytes21("oldETH"), bytes21("ETH"));
         vm.prank(governance);
-        ftsoV2.changeFeedIds(oldFeedIds, newFeedIds);
-        assertEq(ftsoV2.getChangedFeedIds().length, 3);
-        assertEq(ftsoV2.getChangedFeedIds()[0], bytes21("oldSGB"));
-        assertEq(ftsoV2.getChangedFeedIds()[1], bytes21("oldBTC"));
-        assertEq(ftsoV2.getChangedFeedIds()[2], bytes21("oldETH"));
-        assertEq(ftsoV2.getFeedIdChange(bytes21("oldSGB")), bytes21("SGB"));
+        ftsoV2.changeFeedIds(feedIdChanges);
+        assertEq(ftsoV2.getFeedIdChanges().length, 3);
+        assertEq(ftsoV2.getFeedIdChanges()[0].oldFeedId, bytes21("oldSGB"));
+        assertEq(ftsoV2.getFeedIdChanges()[0].newFeedId, bytes21("SGB"));
+        assertEq(ftsoV2.getFeedIdChanges()[1].oldFeedId, bytes21("oldBTC"));
+        assertEq(ftsoV2.getFeedIdChanges()[1].newFeedId, bytes21("BTC"));
+        assertEq(ftsoV2.getFeedIdChanges()[2].oldFeedId, bytes21("oldETH"));
+        assertEq(ftsoV2.getFeedIdChanges()[2].newFeedId, bytes21("ETH"));
 
         // remove oldSGB change
-        oldFeedIds = new bytes21[](1);
-        oldFeedIds[0] = bytes21("oldSGB");
-        newFeedIds = new bytes21[](1);
-        newFeedIds[0] = bytes21(0);
+        feedIdChanges = new FtsoV2Interface.FeedIdChange[](1);
+        feedIdChanges[0] = FtsoV2Interface.FeedIdChange(bytes21("oldSGB"), bytes21(0));
         vm.prank(governance);
         vm.expectEmit();
-        emit FeedIdChanged(oldFeedIds[0], newFeedIds[0]);
-        ftsoV2.changeFeedIds(oldFeedIds, newFeedIds);
-        assertEq(ftsoV2.getChangedFeedIds().length, 2);
-        assertEq(ftsoV2.getChangedFeedIds()[0], bytes21("oldETH"));
-        assertEq(ftsoV2.getChangedFeedIds()[1], bytes21("oldBTC"));
-        assertEq(ftsoV2.getFeedIdChange(bytes21("oldSGB")), bytes21(0));
+        emit FeedIdChanged(feedIdChanges[0].oldFeedId, feedIdChanges[0].newFeedId);
+        ftsoV2.changeFeedIds(feedIdChanges);
+        assertEq(ftsoV2.getFeedIdChanges().length, 2);
+        assertEq(ftsoV2.getFeedIdChanges()[0].oldFeedId, bytes21("oldETH"));
+        assertEq(ftsoV2.getFeedIdChanges()[0].newFeedId, bytes21("ETH"));
+        assertEq(ftsoV2.getFeedIdChanges()[1].oldFeedId, bytes21("oldBTC"));
+        assertEq(ftsoV2.getFeedIdChanges()[1].newFeedId, bytes21("BTC"));
     }
 
     function testRemoveFeedIdsChange1() public {
         testChangeFeedId();
-        assertEq(ftsoV2.getChangedFeedIds().length, 1);
-        bytes21[] memory oldFeedIds = new bytes21[](1);
-        oldFeedIds[0] = bytes21("oldSGB");
-        bytes21[] memory newFeedIds = new bytes21[](1);
-        newFeedIds[0] = bytes21(0);
+        assertEq(ftsoV2.getFeedIdChanges().length, 1);
+        FtsoV2Interface.FeedIdChange[] memory feedIdChanges = new FtsoV2Interface.FeedIdChange[](1);
+        feedIdChanges[0] = FtsoV2Interface.FeedIdChange(bytes21("oldSGB"), bytes21(0));
         vm.prank(governance);
-        ftsoV2.changeFeedIds(oldFeedIds, newFeedIds);
-        assertEq(ftsoV2.getFeedIdChange(bytes21("oldSGB")), bytes21(0));
-        assertEq(ftsoV2.getChangedFeedIds().length, 0);
+        ftsoV2.changeFeedIds(feedIdChanges);
+        assertEq(ftsoV2.getFeedIdChanges().length, 0);
     }
 
     function testRemoveFeedIdsChangeRevert() public {
-        bytes21[] memory oldFeedIds = new bytes21[](1);
-        oldFeedIds[0] = bytes21("oldSGB");
-        bytes21[] memory newFeedIds = new bytes21[](1);
-        newFeedIds[0] = bytes21(0);
+        FtsoV2Interface.FeedIdChange[] memory feedIdChanges = new FtsoV2Interface.FeedIdChange[](1);
+        feedIdChanges[0] = FtsoV2Interface.FeedIdChange(bytes21("oldSGB"), bytes21(0));
         vm.prank(governance);
         vm.expectRevert("feed id change does not exist");
-        ftsoV2.changeFeedIds(oldFeedIds, newFeedIds);
+        ftsoV2.changeFeedIds(feedIdChanges);
     }
 
     function testChangeFeedIdsRevertSameIds() public {
-        bytes21[] memory oldFeedIds = new bytes21[](1);
-        oldFeedIds[0] = bytes21("oldSGB");
-        bytes21[] memory newFeedIds = new bytes21[](1);
-        newFeedIds[0] = bytes21("oldSGB");
+        FtsoV2Interface.FeedIdChange[] memory feedIdChanges = new FtsoV2Interface.FeedIdChange[](1);
+        feedIdChanges[0] = FtsoV2Interface.FeedIdChange(bytes21("oldSGB"), bytes21("oldSGB"));
         vm.prank(governance);
         vm.expectRevert("feed ids are the same");
-        ftsoV2.changeFeedIds(oldFeedIds, newFeedIds);
+        ftsoV2.changeFeedIds(feedIdChanges);
     }
 
     function testUpdateFeedIdsChange() public {
         testChangeFeedId();
-        assertEq(ftsoV2.getFeedIdChange(bytes21("oldSGB")), bytes21("SGB"));
-        assertEq(ftsoV2.getChangedFeedIds().length, 1);
+        assertEq(ftsoV2.getFeedIdChanges().length, 1);
+        assertEq(ftsoV2.getFeedIdChanges()[0].oldFeedId, bytes21("oldSGB"));
+        assertEq(ftsoV2.getFeedIdChanges()[0].newFeedId, bytes21("SGB"));
 
         // update feed id change
-        bytes21[] memory oldFeedIds = new bytes21[](1);
-        oldFeedIds[0] = bytes21("oldSGB");
-        bytes21[] memory newFeedIds = new bytes21[](1);
-        newFeedIds[0] = bytes21("newSGB");
+        FtsoV2Interface.FeedIdChange[] memory feedIdChanges = new FtsoV2Interface.FeedIdChange[](1);
+        feedIdChanges[0] = FtsoV2Interface.FeedIdChange(bytes21("oldSGB"), bytes21("newSGB"));
         vm.prank(governance);
         vm.expectEmit();
-        emit FeedIdChanged(oldFeedIds[0], newFeedIds[0]);
-        ftsoV2.changeFeedIds(oldFeedIds, newFeedIds);
-        assertEq(ftsoV2.getFeedIdChange(bytes21("oldSGB")), bytes21("newSGB"));
-        assertEq(ftsoV2.getChangedFeedIds().length, 1);
+        emit FeedIdChanged(feedIdChanges[0].oldFeedId, feedIdChanges[0].newFeedId);
+        ftsoV2.changeFeedIds(feedIdChanges);
+        assertEq(ftsoV2.getFeedIdChanges().length, 1);
+        assertEq(ftsoV2.getFeedIdChanges()[0].oldFeedId, bytes21("oldSGB"));
+        assertEq(ftsoV2.getFeedIdChanges()[0].newFeedId, bytes21("newSGB"));
     }
 
     //// Proxy upgrade

@@ -21,6 +21,15 @@ interface FtsoV2Interface {
         FeedData body;
     }
 
+    /// Feed id change structure
+    struct FeedIdChange {
+        bytes21 oldFeedId;
+        bytes21 newFeedId;
+    }
+
+    /// Event emitted when a feed id is changed (e.g. feed renamed).
+    event FeedIdChanged(bytes21 indexed oldFeedId, bytes21 indexed newFeedId);
+
     /**
      * Returns the FTSO protocol id.
      */
@@ -31,6 +40,12 @@ interface FtsoV2Interface {
      * @return _feedIds The list of supported feed ids.
      */
     function getSupportedFeedIds() external view returns (bytes21[] memory _feedIds);
+
+    /**
+     * Returns the list of feed id changes.
+     * @return _feedIdChanges The list of changed feed id pairs (old and new feed id).
+     */
+    function getFeedIdChanges() external view returns (FeedIdChange[] memory _feedIdChanges);
 
     /**
      * Calculates the fee for fetching a feed.

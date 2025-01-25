@@ -15,11 +15,18 @@ import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation, AddressUpdatable {
     using MerkleProof for bytes32[];
 
+    /// Custom feed structure
+    struct CustomFeed {
+        bytes21 feedId;
+        IICustomFeed customFeed;
+    }
+    /// Custom feed data structure
     struct CustomFeedData {
         IICustomFeed customFeed;
         uint96 index;  // index is 1-based, 0 means non-existent
     }
-    struct FeedIdChange {
+    /// Feed id change data structure
+    struct FeedIdChangeData {
         bytes21 newFeedId;
         uint88 index;  // index is 1-based, 0 means non-existent
     }
@@ -37,9 +44,9 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
     IRelay public relay;
 
     bytes21[] private customFeedIds;
-    mapping(bytes21 feedId => CustomFeedData) private customFeedsData;
+    mapping(bytes21 customFeedId => CustomFeedData) private customFeeds; // custom feed id -> custom feed contract
     bytes21[] private changedFeedIds;
-    mapping(bytes21 oldFeedId => FeedIdChange) private feedIdChanges;
+    mapping(bytes21 changedFeedId => FeedIdChangeData) private feedIdChanges; // old feed id -> new feed id
 
     /// Event emitted when a custom feed is added.
     event CustomFeedAdded(bytes21 indexed feedId, IICustomFeed customFeed);
@@ -47,8 +54,6 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
     event CustomFeedReplaced(bytes21 indexed feedId, IICustomFeed oldCustomFeed, IICustomFeed newCustomFeed);
     /// Event emitted when a custom feed is removed.
     event CustomFeedRemoved(bytes21 indexed feedId);
-    /// Event emitted when a feed id is changed (e.g. feed renamed).
-    event FeedIdChanged(bytes21 indexed oldFeedId, bytes21 indexed newFeedId);
 
     /**
      * Constructor that initializes with invalid parameters to prevent direct deployment/updates.
@@ -117,6 +122,17 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
     /**
      * @inheritdoc FtsoV2Interface
      */
+    function getFeedIdChanges() external view returns (FeedIdChange[] memory _changedFeedIds) {
+        _changedFeedIds = new FeedIdChange[](changedFeedIds.length);
+        for (uint256 i = 0; i < _changedFeedIds.length; i++) {
+            bytes21 feedId = changedFeedIds[i];
+            _changedFeedIds[i] = FeedIdChange(feedId, feedIdChanges[feedId].newFeedId);
+        }
+    }
+
+    /**
+     * @inheritdoc FtsoV2Interface
+     */
     function getFeedById(bytes21 _feedId) external payable returns (uint256, int8, uint64) {
         return _getFeedById(_feedId);
     }
@@ -172,7 +188,7 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
         // first check for feed id changes
         _feedId = _getCurrentFeedId(_feedId);
         if (_isCustomFeedId(_feedId)) {
-            IICustomFeed customFeed = customFeedsData[_feedId].customFeed;
+            IICustomFeed customFeed = customFeeds[_feedId].customFeed;
             require(address(customFeed) != address(0), "custom feed id not supported");
             return customFeed.calculateFee();
         } else {
@@ -195,7 +211,7 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
         uint256 index = 0;
         for (uint256 i = 0; i < _feedIds.length; i++) {
             if (_isCustomFeedId(_feedIds[i])) {
-                IICustomFeed customFeed = customFeedsData[_feedIds[i]].customFeed;
+                IICustomFeed customFeed = customFeeds[_feedIds[i]].customFeed;
                 require(address(customFeed) != address(0), "custom feed id not supported");
                 _fee += customFeed.calculateFee();
             } else {
@@ -336,7 +352,7 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
         for (uint256 i = 0; i < _customFeeds.length; i++) {
             bytes21 feedId = _customFeeds[i].feedId();
             require(_isCustomFeedId(feedId), "invalid feed category");
-            CustomFeedData storage customFeedData = customFeedsData[feedId];
+            CustomFeedData storage customFeedData = customFeeds[feedId];
             require(customFeedData.index == 0, "feed already exists");
             customFeedIds.push(feedId);
             customFeedData.customFeed = _customFeeds[i];
@@ -353,7 +369,7 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
     function replaceCustomFeeds(IICustomFeed[] calldata _customFeeds) external onlyGovernance {
         for (uint256 i = 0; i < _customFeeds.length; i++) {
             bytes21 feedId = _customFeeds[i].feedId();
-            CustomFeedData storage customFeedData = customFeedsData[feedId];
+            CustomFeedData storage customFeedData = customFeeds[feedId];
             require(customFeedData.index != 0, "feed does not exist");
             emit CustomFeedReplaced(feedId, customFeedData.customFeed, _customFeeds[i]);
             customFeedData.customFeed = _customFeeds[i];
@@ -367,33 +383,33 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
      */
     function removeCustomFeeds(bytes21[] calldata _feedIds) external onlyGovernance {
         for (uint256 i = 0; i < _feedIds.length; i++) {
-            CustomFeedData storage customFeedData = customFeedsData[_feedIds[i]];
+            CustomFeedData storage customFeedData = customFeeds[_feedIds[i]];
             uint96 index = customFeedData.index;
             require(index != 0, "feed does not exist");
             uint256 length = customFeedIds.length; // length >= index > 0
             if (index != length) {
                 bytes21 lastFeedId = customFeedIds[length - 1];
                 customFeedIds[index - 1] = lastFeedId;
-                customFeedsData[lastFeedId].index = index;
+                customFeeds[lastFeedId].index = index;
             }
             customFeedIds.pop();
-            delete customFeedsData[_feedIds[i]];
+            delete customFeeds[_feedIds[i]];
             emit CustomFeedRemoved(_feedIds[i]);
         }
     }
 
     /**
      * Change feed ids. This is used when a feed id is updated (e.g. feed renamed).
-     * @param _oldFeedIds The old feed ids.
-     * @param _newFeedIds The new feed ids.
+     * @param _feedIdChanges The feed id changes to apply.
      * @dev Only governance can call this method.
      */
-    function changeFeedIds(bytes21[] calldata _oldFeedIds, bytes21[] calldata _newFeedIds) external onlyGovernance {
-        require(_oldFeedIds.length == _newFeedIds.length, "array lengths do not match");
-        for (uint256 i = 0; i < _oldFeedIds.length; i++) {
-            require(_oldFeedIds[i] != _newFeedIds[i], "feed ids are the same");
-            uint88 index = feedIdChanges[_oldFeedIds[i]].index;
-            if (_newFeedIds[i] == bytes21(0)) { // remove feed id change
+    function changeFeedIds(FeedIdChange[] calldata _feedIdChanges) external onlyGovernance {
+        for (uint256 i = 0; i < _feedIdChanges.length; i++) {
+            bytes21 oldFeedId = _feedIdChanges[i].oldFeedId;
+            bytes21 newFeedId = _feedIdChanges[i].newFeedId;
+            require(oldFeedId != newFeedId, "feed ids are the same");
+            uint88 index = feedIdChanges[oldFeedId].index;
+            if (newFeedId == bytes21(0)) { // remove feed id change
                 if (index != 0) {
                     uint256 length = changedFeedIds.length; // length >= index > 0
                     if (index != length) {
@@ -402,52 +418,32 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
                         changedFeedIds[index - 1] = lastFeedId;
                     }
                     changedFeedIds.pop();
-                    delete feedIdChanges[_oldFeedIds[i]];
+                    delete feedIdChanges[oldFeedId];
                 } else {
                     revert("feed id change does not exist");
                 }
             } else {
                 if (index == 0) { // add feed id change
-                    changedFeedIds.push(_oldFeedIds[i]);
-                    feedIdChanges[_oldFeedIds[i]] = FeedIdChange(_newFeedIds[i], uint88(changedFeedIds.length));
+                    changedFeedIds.push(oldFeedId);
+                    feedIdChanges[oldFeedId] = FeedIdChangeData(newFeedId, uint88(changedFeedIds.length));
                 } else { // update feed id change
-                    feedIdChanges[_oldFeedIds[i]].newFeedId = _newFeedIds[i];
+                    feedIdChanges[oldFeedId].newFeedId = newFeedId;
                 }
             }
-            emit FeedIdChanged(_oldFeedIds[i], _newFeedIds[i]);
+            emit FeedIdChanged(oldFeedId, newFeedId);
         }
     }
 
     /**
-     * Returns the contract used with custom feed or address zero if feed id is not supported.
-     * @param _feedId The feed id.
-     * @return _customFeed The custom feed contract.
+     * Returns the custom feed ids and corresponding custom feed contracts.
+     * @return _customFeeds The list of custom feed ids and corresponding custom feed contracts.
      */
-    function getCustomFeedContract(bytes21 _feedId) external view returns (IICustomFeed _customFeed) {
-        return customFeedsData[_feedId].customFeed;
-    }
-
-    /**
-     * Returns the custom feed ids.
-     */
-    function getCustomFeedIds() external view returns (bytes21[] memory) {
-        return customFeedIds;
-    }
-
-    /**
-     * Returns the feed id change or bytes21(0) if feed id is not changed.
-     * @param _oldFeedId The old feed id.
-     * @return _newFeedId The new feed id.
-     */
-    function getFeedIdChange(bytes21 _oldFeedId) external view returns (bytes21 _newFeedId) {
-        return feedIdChanges[_oldFeedId].newFeedId;
-    }
-
-    /**
-     * Returns the changed feed ids.
-     */
-    function getChangedFeedIds() external view returns (bytes21[] memory) {
-        return changedFeedIds;
+    function getCustomFeeds() external view returns(CustomFeed[] memory _customFeeds) {
+        _customFeeds = new CustomFeed[](customFeedIds.length);
+        for (uint256 i = 0; i < _customFeeds.length; i++) {
+            bytes21 feedId = customFeedIds[i];
+            _customFeeds[i] = CustomFeed(feedId, customFeeds[feedId].customFeed);
+        }
     }
 
     /////////////////////////////// UUPS UPGRADABLE ///////////////////////////////
@@ -535,7 +531,7 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
             // set custom feeds data first
             for (uint256 i = 0; i < _feedIds.length; i++) {
                 if (_isCustomFeedId(_feedIds[i])) {
-                    IICustomFeed customFeed = customFeedsData[_feedIds[i]].customFeed;
+                    IICustomFeed customFeed = customFeeds[_feedIds[i]].customFeed;
                     require(address(customFeed) != address(0), "custom feed id not supported");
                     uint256 fee = customFeed.calculateFee();
                     (_values[i], _decimals[i], _timestamp) = customFeed.getCurrentFeed{value: fee} ();
@@ -571,7 +567,7 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
         // first check for feed id changes
         _feedId = _getCurrentFeedId(_feedId);
         if (_isCustomFeedId(_feedId)) {
-            IICustomFeed customFeed = customFeedsData[_feedId].customFeed;
+            IICustomFeed customFeed = customFeeds[_feedId].customFeed;
             require(address(customFeed) != address(0), "custom feed id not supported");
             return customFeed.getCurrentFeed{value: msg.value} ();
         } else {
