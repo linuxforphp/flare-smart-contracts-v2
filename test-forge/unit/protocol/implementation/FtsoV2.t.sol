@@ -640,6 +640,14 @@ contract FtsoV2Test is Test {
     }
 
     function testGetFeedsByIdRevert() public {
+        bytes21[] memory feedIds = new bytes21[](2);
+        feedIds[0] = flrFeedId;
+        feedIds[1] = sflrFeedId;
+        vm.expectRevert("feed does not exist");
+        ftsoV2.getFeedsById(feedIds);
+    }
+
+    function testGetFeedsByIdRevertCustom() public {
         _addFeeds();
         bytes21[] memory feedIds = new bytes21[](2);
         feedIds[0] = flrFeedId;
@@ -838,6 +846,7 @@ contract FtsoV2Test is Test {
     }
 
     function testRemoveFeedIdsChange() public {
+        _addFeeds();
         FtsoV2Interface.FeedIdChange[] memory feedIdChanges = new FtsoV2Interface.FeedIdChange[](3);
         feedIdChanges[0] = FtsoV2Interface.FeedIdChange(bytes21("oldSGB"), bytes21("SGB"));
         feedIdChanges[1] = FtsoV2Interface.FeedIdChange(bytes21("oldBTC"), bytes21("BTC"));
@@ -884,6 +893,22 @@ contract FtsoV2Test is Test {
         ftsoV2.changeFeedIds(feedIdChanges);
     }
 
+    function testChangeFeedIdsRevertFeedDoesNotExist() public {
+        FtsoV2Interface.FeedIdChange[] memory feedIdChanges = new FtsoV2Interface.FeedIdChange[](1);
+        feedIdChanges[0] = FtsoV2Interface.FeedIdChange(bytes21("oldFLR"), flrFeedId);
+        vm.prank(governance);
+        vm.expectRevert("feed does not exist");
+        ftsoV2.changeFeedIds(feedIdChanges);
+    }
+
+    function testChangeFeedIdsRevertCustomFeedIdNotSupported() public {
+        FtsoV2Interface.FeedIdChange[] memory feedIdChanges = new FtsoV2Interface.FeedIdChange[](1);
+        feedIdChanges[0] = FtsoV2Interface.FeedIdChange(bytes21("oldSFLR"), sflrFeedId);
+        vm.prank(governance);
+        vm.expectRevert("custom feed id not supported");
+        ftsoV2.changeFeedIds(feedIdChanges);
+    }
+
     function testChangeFeedIdsRevertSameIds() public {
         FtsoV2Interface.FeedIdChange[] memory feedIdChanges = new FtsoV2Interface.FeedIdChange[](1);
         feedIdChanges[0] = FtsoV2Interface.FeedIdChange(bytes21("oldSGB"), bytes21("oldSGB"));
@@ -897,6 +922,8 @@ contract FtsoV2Test is Test {
         assertEq(ftsoV2.getFeedIdChanges().length, 1);
         assertEq(ftsoV2.getFeedIdChanges()[0].oldFeedId, bytes21("oldSGB"));
         assertEq(ftsoV2.getFeedIdChanges()[0].newFeedId, bytes21("SGB"));
+
+        _addNewSGBFeedToFastUpdates();
 
         // update feed id change
         FtsoV2Interface.FeedIdChange[] memory feedIdChanges = new FtsoV2Interface.FeedIdChange[](1);
@@ -1050,6 +1077,31 @@ contract FtsoV2Test is Test {
         fees[1] = 9;
         vm.prank(governance);
         feeCalculator.setFeedsFees(feedIds, fees);
+    }
+
+    function _addNewSGBFeedToFastUpdates() private {
+        IFastUpdatesConfiguration.FeedConfiguration[] memory feedConfigs =
+            new IFastUpdatesConfiguration.FeedConfiguration[](1);
+        feedConfigs[0] = IFastUpdatesConfiguration.FeedConfiguration({
+            feedId: bytes21("newSGB"),
+            rewardBandValue: 400,
+            inflationShare: 250
+        });
+
+        vm.mockCall(
+            mockFtsoFeedPublisher,
+            abi.encodeWithSelector(bytes4(keccak256("getCurrentFeed(bytes21)")), bytes21("newSGB")),
+            abi.encode(IFtsoFeedPublisher.Feed({
+                votingRoundId: 1,
+                id: bytes21("newSGB"),
+                value: 12345678,
+                turnoutBIPS: 1000,
+                decimals: 7
+            }))
+        );
+
+        vm.prank(governance);
+        fastUpdatesConfiguration.addFeeds(feedConfigs);
     }
 
     function _addSFlrCustomFeed() private {

@@ -422,7 +422,14 @@ contract FtsoV2 is FtsoV2Interface, UUPSUpgradeable, GovernedProxyImplementation
                 } else {
                     revert("feed id change does not exist");
                 }
-            } else {
+            } else { // add or update feed id change
+                // check first if new feed id is supported
+                if (_isCustomFeedId(newFeedId)) {
+                    require(customFeeds[newFeedId].index != 0, "custom feed id not supported");
+                } else {
+                    fastUpdatesConfiguration.getFeedIndex(newFeedId); // check if feed id is supported
+                }
+
                 if (index == 0) { // add feed id change
                     changedFeedIds.push(oldFeedId);
                     feedIdChanges[oldFeedId] = FeedIdChangeData(newFeedId, uint88(changedFeedIds.length));

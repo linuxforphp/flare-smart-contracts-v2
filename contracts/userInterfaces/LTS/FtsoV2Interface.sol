@@ -36,7 +36,8 @@ interface FtsoV2Interface {
     function getFtsoProtocolId() external view returns (uint256);
 
     /**
-     * Returns the list of supported feed ids.
+     * Returns the list of supported feed ids (currently active feed ids).
+     * To get the list of all available feed ids, combine with `getFeedIdChanges()`.
      * @return _feedIds The list of supported feed ids.
      */
     function getSupportedFeedIds() external view returns (bytes21[] memory _feedIds);
