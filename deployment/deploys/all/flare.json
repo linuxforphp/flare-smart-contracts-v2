@@ -448,5 +448,12 @@
     "addresses": [
       "0x64e152B754c003B51D88Ebf0FA88C3DA39A0E7e0"
     ]
+  },
+  {
+    "name": "ChainlinkAdapterStFlr",
+    "contractName": "ChainlinkAdapterProxy.sol",
+    "addresses": [
+      "0x71ca43Df4FEe2F6cAD86AF4d51bF6E3E302C660E"
+    ]
   }
 ]
